@@ -11,6 +11,7 @@ import (
 
 type secretMetadata struct {
 	Name        string   `json:"name"`
+	DisplayName string   `json:"display_name"`
 	Description string   `json:"description"`
 	Confirm     bool     `json:"confirm"`
 	Tags        []string `json:"tags"`
@@ -52,7 +53,14 @@ func runList(c client.Caller) error {
 		if len(s.Tags) > 0 {
 			tags = " (" + strings.Join(s.Tags, ", ") + ")"
 		}
-		fmt.Printf("  %s%s%s\n", s.Name, confirm, tags)
+		label := s.Name
+		if s.DisplayName != "" && s.DisplayName != s.Name {
+			label = s.DisplayName
+		}
+		fmt.Printf("  %s%s%s\n", label, confirm, tags)
+		if s.DisplayName != "" && s.DisplayName != s.Name {
+			fmt.Printf("    id: %s\n", s.Name)
+		}
 		if s.Description != "" {
 			fmt.Printf("    %s\n", s.Description)
 		}
