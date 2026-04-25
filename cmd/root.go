@@ -25,6 +25,8 @@ func NewRootCmd() *cobra.Command {
 		newStatusCmd(),
 		newLockCmd(),
 		newUnlockCmd(),
+		newEnsureDaemonCmd(),
+		newListCmd(),
 	)
 
 	return root
