@@ -80,4 +80,45 @@ final class ModelsTests: XCTestCase {
         XCTAssertTrue(json.contains("\"ttl_remaining_seconds\""))
         XCTAssertTrue(json.contains("\"secret_count\""))
     }
+
+    func testSecret_DisplayName_RoundTrip() throws {
+        let secret = Secret(
+            name: "openai-api-key",
+            displayName: "OpenAI API key",
+            value: "sk-...",
+            description: "",
+            confirm: false,
+            tags: [],
+            created: Date(timeIntervalSince1970: 1_700_000_000),
+            updated: nil
+        )
+        let data = try encoder.encode(secret)
+        let json = String(data: data, encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"display_name\":\"OpenAI API key\""))
+        let decoded = try decoder.decode(Secret.self, from: data)
+        XCTAssertEqual(decoded.displayName, "OpenAI API key")
+        XCTAssertEqual(decoded.name, "openai-api-key")
+    }
+
+    func testSecret_DisplayName_BackwardCompat() throws {
+        // A secret JSON written before display_name was added has no such key.
+        let oldJSON = #"""
+        {"name":"old-secret","value":"v","description":"d","confirm":false,"tags":[],"created":"2025-01-01T00:00:00Z"}
+        """#.data(using: .utf8)!
+        let s = try decoder.decode(Secret.self, from: oldJSON)
+        XCTAssertEqual(s.displayName, "")
+        XCTAssertEqual(s.name, "old-secret")
+    }
+
+    func testSecretMetadata_CarriesDisplayName() throws {
+        let secret = Secret(
+            name: "k", displayName: "Kebab Display",
+            value: "v", description: "d", confirm: false, tags: [],
+            created: Date()
+        )
+        let meta = SecretMetadata(from: secret)
+        XCTAssertEqual(meta.displayName, "Kebab Display")
+        let data = try encoder.encode(meta)
+        XCTAssertTrue(String(data: data, encoding: .utf8)!.contains("\"display_name\":\"Kebab Display\""))
+    }
 }

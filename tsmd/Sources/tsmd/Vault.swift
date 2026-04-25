@@ -51,6 +51,17 @@ enum NameValidation {
     }
 }
 
+enum DisplayNameValidation {
+    static func validate(_ s: String) throws {
+        guard s.count <= 256 else {
+            throw VaultError.invalidName("Display name must be 256 characters or fewer")
+        }
+        for ch in s.unicodeScalars where ch.value < 0x20 || ch.value == 0x7F {
+            throw VaultError.invalidName("Display name cannot contain control characters")
+        }
+    }
+}
+
 // MARK: - Vault actor
 
 actor Vault {
@@ -161,16 +172,17 @@ actor Vault {
         return secret
     }
 
-    func add(name: String, value: String, description: String,
+    func add(name: String, displayName: String = "", value: String, description: String,
              confirm: Bool = false, tags: [String] = [],
              clientId: String? = nil) async throws {
         guard data != nil else { throw VaultError.locked }
         try NameValidation.validate(name)
+        try DisplayNameValidation.validate(displayName)
         guard !data!.secrets.contains(where: { $0.name.lowercased() == name.lowercased() }) else {
             throw VaultError.secretAlreadyExists(name)
         }
         let secret = Secret(
-            name: name, value: value, description: description,
+            name: name, displayName: displayName, value: value, description: description,
             confirm: confirm, tags: tags, created: Date()
         )
         data!.secrets.append(secret)
@@ -190,14 +202,18 @@ actor Vault {
         try? accessLog.log(method: "vault.remove", secret: name, clientId: clientId, result: "ok")
     }
 
-    func edit(name: String, value: String? = nil, description: String? = nil,
-              confirm: Bool? = nil, tags: [String]? = nil,
+    func edit(name: String, displayName: String? = nil, value: String? = nil,
+              description: String? = nil, confirm: Bool? = nil, tags: [String]? = nil,
               clientId: String? = nil) async throws {
         guard data != nil else { throw VaultError.locked }
         guard let index = data!.secrets.firstIndex(where: {
             $0.name.lowercased() == name.lowercased()
         }) else {
             throw VaultError.secretNotFound(name)
+        }
+        if let dn = displayName {
+            try DisplayNameValidation.validate(dn)
+            data!.secrets[index].displayName = dn
         }
         if let v = value { data!.secrets[index].value = v }
         if let d = description { data!.secrets[index].description = d }

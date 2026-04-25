@@ -63,6 +63,7 @@ actor JSONRPCHandler {
                   let value = req.stringParam("value") else {
                 throw VaultError.invalidName("Missing 'name' or 'value' parameter")
             }
+            let displayName = req.stringParam("display_name") ?? ""
             let description = req.stringParam("description") ?? ""
             let confirm = req.param("confirm")?.boolValue ?? false
             let tags: [String] = {
@@ -72,8 +73,9 @@ actor JSONRPCHandler {
                 return []
             }()
             let clientId = req.stringParam("client_id")
-            try await vault.add(name: name, value: value, description: description,
-                               confirm: confirm, tags: tags, clientId: clientId)
+            try await vault.add(name: name, displayName: displayName, value: value,
+                               description: description, confirm: confirm, tags: tags,
+                               clientId: clientId)
             return .object(["ok": .bool(true)])
 
         case "vault.remove":
@@ -91,6 +93,7 @@ actor JSONRPCHandler {
             let clientId = req.stringParam("client_id")
             try await vault.edit(
                 name: name,
+                displayName: req.stringParam("display_name"),
                 value: req.stringParam("value"),
                 description: req.stringParam("description"),
                 confirm: req.param("confirm")?.boolValue,
