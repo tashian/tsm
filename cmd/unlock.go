@@ -21,12 +21,22 @@ func newUnlockCmd() *cobra.Command {
 }
 
 func runUnlock(c client.Caller) error {
-	if err := c.Call("vault.unlock", nil, nil); err != nil {
+	var resp struct {
+		OK                  bool `json:"ok"`
+		TTLRemainingSeconds *int `json:"ttl_remaining_seconds"`
+	}
+	if err := c.Call("vault.unlock", nil, &resp); err != nil {
 		return handleError(err)
 	}
 	if jsonOutput() {
-		return printJSON(map[string]bool{"ok": true})
+		return printJSON(resp)
 	}
-	fmt.Println("Vault unlocked.")
+	if resp.TTLRemainingSeconds != nil {
+		hours := *resp.TTLRemainingSeconds / 3600
+		minutes := (*resp.TTLRemainingSeconds % 3600) / 60
+		fmt.Printf("Vault unlocked. TTL: %dh %dm\n", hours, minutes)
+	} else {
+		fmt.Println("Vault unlocked.")
+	}
 	return nil
 }

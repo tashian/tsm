@@ -36,7 +36,12 @@ actor JSONRPCHandler {
         case "vault.unlock":
             let passphrase = req.stringParam("passphrase")
             try await vault.unlock(passphrase: passphrase)
-            return .object(["ok": .bool(true)])
+            let status = await vault.status()
+            var resp: [String: JSONValue] = ["ok": .bool(true)]
+            if let ttl = status.ttlRemainingSeconds {
+                resp["ttl_remaining_seconds"] = .int(ttl)
+            }
+            return .object(resp)
 
         case "vault.lock":
             await vault.lock()
