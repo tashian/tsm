@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
+import "tsm/cmd"
 
 func main() {
-	fmt.Println("tsm")
+	cmd.Execute()
 }
