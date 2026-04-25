@@ -1,12 +1,34 @@
 import Foundation
 import Security
 
-enum KeychainError: Error {
+enum KeychainError: LocalizedError {
     case storeFailed(OSStatus)
     case retrieveFailed(OSStatus)
     case deleteFailed(OSStatus)
     case notFound
     case unexpectedData
+
+    var errorDescription: String? {
+        switch self {
+        case .storeFailed(let status):
+            return "Keychain store failed: \(secErrorMessage(status)) (OSStatus \(status))"
+        case .retrieveFailed(let status):
+            return "Keychain retrieve failed: \(secErrorMessage(status)) (OSStatus \(status))"
+        case .deleteFailed(let status):
+            return "Keychain delete failed: \(secErrorMessage(status)) (OSStatus \(status))"
+        case .notFound:
+            return "Keychain item not found"
+        case .unexpectedData:
+            return "Keychain returned unexpected data type"
+        }
+    }
+}
+
+private func secErrorMessage(_ status: OSStatus) -> String {
+    if let cfMsg = SecCopyErrorMessageString(status, nil) {
+        return cfMsg as String
+    }
+    return "unknown error"
 }
 
 struct MacKeychain: KeychainProvider, Sendable {
@@ -14,24 +36,19 @@ struct MacKeychain: KeychainProvider, Sendable {
     let account = "master-key"
 
     func storeMasterKey(_ key: Data) throws {
-        // Delete any existing entry first
         try? deleteMasterKey()
 
-        guard let accessControl = SecAccessControlCreateWithFlags(
-            nil,
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            .biometryCurrentSet,
-            nil
-        ) else {
-            throw KeychainError.storeFailed(errSecParam)
-        }
-
+        // Note: Touch ID is enforced by the Auth layer (LAContext) before any
+        // sensitive operation. We do not gate the Keychain item itself with
+        // `.biometryCurrentSet` because that requires the restricted
+        // `keychain-access-groups` entitlement, which in turn requires
+        // Developer ID signing or an Xcode-managed provisioning profile.
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: key,
-            kSecAttrAccessControl as String: accessControl,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             kSecAttrSynchronizable as String: false,
         ]
 
