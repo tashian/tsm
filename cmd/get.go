@@ -21,7 +21,7 @@ Default:    JSON to stdout    {"name": "...", "value": "..."}
 --to-file:  Write to file     (mode 0600, raw value, no newline)`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(func(c client.Caller) error {
+			return withUnlockedClient(func(c client.Caller) error {
 				return runGet(cmd, c, args[0])
 			})
 		},

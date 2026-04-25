@@ -33,6 +33,19 @@ func withClient(fn func(c client.Caller) error) error {
 	return fn(c)
 }
 
+// withUnlockedClient is like withClient but also unlocks the vault before
+// running fn. Triggers Touch ID if the vault is locked; no-op if already
+// unlocked. Use this for commands that mutate or read secret data so the
+// auth prompt happens before any TUI form, not after.
+func withUnlockedClient(fn func(c client.Caller) error) error {
+	return withClient(func(c client.Caller) error {
+		if err := c.Call("vault.unlock", nil, nil); err != nil {
+			return handleError(err)
+		}
+		return fn(c)
+	})
+}
+
 // isTTY returns true if the given file descriptor is a terminal.
 func isTTY(fd int) bool {
 	return term.IsTerminal(fd)

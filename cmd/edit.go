@@ -18,7 +18,7 @@ func newEditCmd() *cobra.Command {
 		Short: "Modify a secret's value, description, or confirm flag",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(func(c client.Caller) error {
+			return withUnlockedClient(func(c client.Caller) error {
 				return runEdit(cmd, c, args[0])
 			})
 		},

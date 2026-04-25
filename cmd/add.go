@@ -24,7 +24,7 @@ Interactive:  tsm add
 Piped:        echo "secret_value" | tsm add --name foo --no-input
 From file:    tsm add --name foo --from-file /path/to/key`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(func(c client.Caller) error {
+			return withUnlockedClient(func(c client.Caller) error {
 				return runAdd(cmd, c)
 			})
 		},

@@ -18,7 +18,7 @@ func newRemoveCmd() *cobra.Command {
 		Short:   "Remove a secret from the vault",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(func(c client.Caller) error {
+			return withUnlockedClient(func(c client.Caller) error {
 				return runRemove(cmd, c, args[0])
 			})
 		},

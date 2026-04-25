@@ -22,7 +22,7 @@ func newListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List secrets (names and descriptions, never values)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(func(c client.Caller) error {
+			return withUnlockedClient(func(c client.Caller) error {
 				return runList(c)
 			})
 		},
