@@ -34,7 +34,7 @@ func runUnlock(c client.Caller) error {
 	if resp.TTLRemainingSeconds != nil {
 		hours := *resp.TTLRemainingSeconds / 3600
 		minutes := (*resp.TTLRemainingSeconds % 3600) / 60
-		fmt.Printf("Vault unlocked. TTL: %dh %dm\n", hours, minutes)
+		fmt.Printf("Vault unlocked for %dh %dm.\n", hours, minutes)
 	} else {
 		fmt.Println("Vault unlocked.")
 	}
