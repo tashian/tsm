@@ -23,6 +23,7 @@ func newEditCmd() *cobra.Command {
 			})
 		},
 	}
+	cmd.Flags().String("display-name", "", "new display name (empty string clears)")
 	cmd.Flags().String("description", "", "new description")
 	cmd.Flags().String("value", "", "not supported — use interactive mode or pipe")
 	cmd.Flags().Bool("confirm", false, "set confirm flag")
@@ -54,13 +55,18 @@ func runEdit(cmd *cobra.Command, c client.Caller, name string) error {
 
 	noInput, _ := cmd.Flags().GetBool("no-input")
 
-	if !noInput && term.IsTerminal(int(os.Stdin.Fd())) && !cmd.Flags().Changed("description") && !cmd.Flags().Changed("confirm") && !cmd.Flags().Changed("no-confirm") && !cmd.Flags().Changed("tags") {
+	if !noInput && term.IsTerminal(int(os.Stdin.Fd())) && !cmd.Flags().Changed("display-name") && !cmd.Flags().Changed("description") && !cmd.Flags().Changed("confirm") && !cmd.Flags().Changed("no-confirm") && !cmd.Flags().Changed("tags") {
+		displayName := current.DisplayName
 		description := current.Description
 		confirm := current.Confirm
 		var newValue string
 
 		form := huh.NewForm(
 			huh.NewGroup(
+				huh.NewInput().
+					Title("Display name").
+					Description("Shown in 'tsm list'. Leave as-is to keep, blank to clear.").
+					Value(&displayName),
 				huh.NewText().
 					Title("Description").
 					Description(fmt.Sprintf("Current: %s", current.Description)).
@@ -78,6 +84,9 @@ func runEdit(cmd *cobra.Command, c client.Caller, name string) error {
 			return err
 		}
 
+		if displayName != current.DisplayName {
+			params["display_name"] = displayName
+		}
 		if description != current.Description {
 			params["description"] = description
 		}
@@ -88,6 +97,10 @@ func runEdit(cmd *cobra.Command, c client.Caller, name string) error {
 			params["confirm"] = confirm
 		}
 	} else {
+		if cmd.Flags().Changed("display-name") {
+			v, _ := cmd.Flags().GetString("display-name")
+			params["display_name"] = v
+		}
 		if cmd.Flags().Changed("description") {
 			v, _ := cmd.Flags().GetString("description")
 			params["description"] = v
