@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tsm list)",
+      "Bash(tsm list:*)",
+      "Bash(tsm status)",
+      "Bash(tsm status:*)",
+      "Bash(tsm get:*)",
+      "Bash(tsm run:*)",
+      "Bash(tsm log)",
+      "Bash(tsm log:*)",
+      "Bash(tsm ensure-daemon)",
+      "Bash(tsm lock)",
+      "Bash(tsm unlock)"
+    ]
+  }
+}
