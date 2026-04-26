@@ -101,6 +101,13 @@ tsm get openai-api-key --raw | pbcopy        # raw value, refuses to write to a 
 tsm get openai-api-key --to-file /tmp/key    # mode 0600, no trailing newline
 ```
 
+Inline in a one-shot command — the secret never appears in shell history or `ps`:
+
+```bash
+curl -H "Authorization: Bearer $(tsm get openai-api-key --raw)" \
+     https://api.openai.com/v1/models
+```
+
 ### Running tools with vault-injected env vars
 
 ```bash
