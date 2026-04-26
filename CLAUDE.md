@@ -73,14 +73,15 @@ Backward-compatible JSON. `Secret.displayName` has a custom decoder defaulting t
 - **JSON-RPC keys are snake_case** (`display_name`, `ttl_remaining_seconds`). Swift uses `CodingKeys` to map; Go uses struct tags.
 - **One responsibility per file.** Each `cmd/*.go` and `tsmd/Sources/tsmd/*.swift` does one thing.
 - **Frequent commits.** Each task in the plans is one commit. Commit messages use Conventional Commits (`feat(tsm):`, `feat(tsmd):`, `fix(tsmd):`, `docs(plans):`, etc.).
+- **Plugin skill stays in sync with the CLI.** PRs that change `tsm` flags, command names, or output shapes must update `plugin/skills/credential-usage/SKILL.md` in the same commit. The skill is what the agent reads to figure out how to use tsm; stale skill text is worse than no skill.
 
 ## Plans (read before making non-trivial changes)
 
 - `docs/plans/2026-03-08-tsm-design.md` — overall design spec, threat model, MCP interface.
 - `docs/plans/2026-03-21-tsmd-implementation.md` — daemon plan; **Addendum** at the bottom covers the `display_name` field.
 - `docs/plans/2026-03-22-tsm-cli-implementation.md` — CLI plan; **Addendum** covers display-name UX, kebab-case helper, and huh validation. Also has a "Known Gaps & Daemon Dependencies" section worth scanning.
-
-Plan 3 (MCP server, `tsm schema`, Claude Code plugin) is not yet written. When it's authored, the MCP `vault_list` tool schema must include `display_name`, and `vault_get` documentation must specify that the **id** is the lookup key (not the display name).
+- `docs/plans/2026-04-25-tsm-agent-integration-design.md` — Plan 3 design (agent integration via `tsm run`, `tsm get --format`, and the Claude Code plugin). Drops the previously-planned `tsm mcp` and `tsm schema` in favor of the existing CLI surface.
+- `docs/plans/2026-04-25-tsm-agent-integration-impl.md` — Plan 3 implementation tasks.
 
 ## Quick gotchas
 
