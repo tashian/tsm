@@ -13,19 +13,19 @@ jobs:
   release:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: stable
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
 
       - name: Derive version from tag
         id: ver
@@ -35,7 +35,7 @@ jobs:
         run: just package ${{ steps.ver.outputs.version }}
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/bin/tsm
