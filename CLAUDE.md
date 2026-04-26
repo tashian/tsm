@@ -88,4 +88,4 @@ Backward-compatible JSON. `Secret.displayName` has a custom decoder defaulting t
 - **Daemon TTL vs config TTL.** `tsm config set ttl_hours` writes a CLI-side config file; the daemon reads its TTL from the vault's embedded `config.ttl_hours` at unlock time. Changes propagate after the next lock/unlock cycle.
 - **`vault.unlock` with passphrase doesn't re-store the key.** Recovery on a new device decrypts but doesn't update the Keychain entry yet (see Plan 2 Known Gaps #1).
 - **No `tsm daemon stop` command.** The only graceful daemon stop today is SIGTERM. `tsm reset` destroys state; SIGTERM just stops the process.
-- **`tsm get --raw` to a TTY is rejected.** It refuses to write secret values to a terminal — pipe or use `--to-file`.
+- **`tsm get` to a TTY is rejected.** Default output is the raw value with no framing; the command refuses to write secret values to a terminal — pipe, redirect, or use `--to-file`.

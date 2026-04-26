@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write       # gh release create
+  id-token: write       # OIDC for npm Trusted Publishing + sigstore provenance
+  attestations: write   # actions/attest-build-provenance
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: extractions/setup-just@v2
+
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & package binaries
+        run: just package ${{ steps.ver.outputs.version }}
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/bin/tsm
+            dist/bin/tsmd
+            dist/release/tsm_${{ steps.ver.outputs.version }}_darwin_arm64.tar.gz
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v${{ steps.ver.outputs.version }} \
+            dist/release/tsm_${{ steps.ver.outputs.version }}_darwin_arm64.tar.gz \
+            dist/release/checksums.txt \
+            --title "v${{ steps.ver.outputs.version }}" \
+            --generate-notes
+
+      - name: Publish npm packages
+        run: just publish-npm ${{ steps.ver.outputs.version }}

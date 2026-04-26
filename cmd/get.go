@@ -16,7 +16,6 @@ import (
 // getOptions captures the inputs for runGetWith. Extracted for testability:
 // production wires these from cobra flags + os.Stdout; tests inject directly.
 type getOptions struct {
-	Raw       bool
 	ToFile    string
 	Format    string // formatter name + optional inline args, space-separated
 	Stdout    io.Writer
@@ -29,19 +28,16 @@ func newGetCmd() *cobra.Command {
 		Short: "Retrieve a secret value",
 		Long: `Retrieve a secret by name.
 
-Default:    JSON to stdout    {"name": "...", "value": "..."}
---raw:      Raw value only    (refuses if stdout is a TTY)
---to-file:  Write to file     (mode 0600, raw value, no newline)
+Default:    Raw value to stdout (refuses if stdout is a TTY)
+--to-file:  Write to file       (mode 0600, raw value, no newline)
 --format F: Run value through formatter F (refuses if stdout is a TTY)
             Built-ins: env VAR, aws-credential-process, pgpass`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			raw, _ := cmd.Flags().GetBool("raw")
 			toFile, _ := cmd.Flags().GetString("to-file")
 			fmtSpec, _ := cmd.Flags().GetString("format")
 			return withUnlockedClient(func(c client.Caller) error {
 				return runGetWith(c, args[0], getOptions{
-					Raw:       raw,
 					ToFile:    toFile,
 					Format:    fmtSpec,
 					Stdout:    os.Stdout,
@@ -50,24 +46,20 @@ Default:    JSON to stdout    {"name": "...", "value": "..."}
 			})
 		},
 	}
-	cmd.Flags().Bool("raw", false, "output raw secret value (no JSON, no newline)")
 	cmd.Flags().String("to-file", "", "write secret value to file (mode 0600)")
 	cmd.Flags().String("format", "", "run value through a formatter (e.g., 'env GITHUB_TOKEN', 'aws-credential-process', 'pgpass')")
 	return cmd
 }
 
 func runGetWith(c client.Caller, name string, opts getOptions) error {
-	// Mutex check: --format is exclusive with --raw, --to-file, and --json.
-	if opts.Format != "" {
-		if opts.Raw {
-			return fmt.Errorf("--format cannot be combined with --raw")
-		}
-		if opts.ToFile != "" {
-			return fmt.Errorf("--format cannot be combined with --to-file")
-		}
-		if jsonOutput() {
-			return fmt.Errorf("--format cannot be combined with --json")
-		}
+	// tsm get has no JSON output mode; reject the global --json flag explicitly
+	// rather than silently ignoring it.
+	if jsonOutput() {
+		return fmt.Errorf("tsm get does not support --json; pipe the value or use --to-file/--format")
+	}
+
+	if opts.Format != "" && opts.ToFile != "" {
+		return fmt.Errorf("--format cannot be combined with --to-file")
 	}
 
 	var secret struct {
@@ -82,9 +74,7 @@ func runGetWith(c client.Caller, name string, opts getOptions) error {
 		if err := os.WriteFile(opts.ToFile, []byte(secret.Value), 0o600); err != nil {
 			return fmt.Errorf("write to file: %w", err)
 		}
-		if !jsonOutput() {
-			fmt.Printf("Secret written to %s\n", opts.ToFile)
-		}
+		fmt.Printf("Secret written to %s\n", opts.ToFile)
 		return nil
 	}
 
@@ -105,15 +95,11 @@ func runGetWith(c client.Caller, name string, opts getOptions) error {
 		return err
 	}
 
-	if opts.Raw {
-		if opts.StdoutTTY {
-			return fmt.Errorf("refusing to write secret to terminal in --raw mode\nPipe to a command or redirect: tsm get %s --raw | some-tool", name)
-		}
-		fmt.Fprint(opts.Stdout, secret.Value)
-		return nil
+	if opts.StdoutTTY {
+		return fmt.Errorf("refusing to write secret to terminal\nPipe to a command or redirect: tsm get %s | some-tool", name)
 	}
-
-	return printJSON(secret)
+	fmt.Fprint(opts.Stdout, secret.Value)
+	return nil
 }
 
 // splitFormatSpec splits "env GITHUB_TOKEN" into ("env", ["GITHUB_TOKEN"]).

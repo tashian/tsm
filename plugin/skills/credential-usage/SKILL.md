@@ -47,7 +47,7 @@ tsm run --env OPENAI_API_KEY=openai-key -- openai api models.list
 For one-shot value capture inside a single shell pipeline (no env-var leakage):
 
 ```bash
-curl -H "Authorization: Bearer $(tsm get gh-pat --raw)" https://api.github.com/user
+curl -H "Authorization: Bearer $(tsm get gh-pat)" https://api.github.com/user
 ```
 
 ### File-flag tools (curl --cacert, psql --pgpass, gcloud --key-file)
@@ -55,7 +55,7 @@ curl -H "Authorization: Bearer $(tsm get gh-pat --raw)" https://api.github.com/u
 Process substitution keeps the secret off disk entirely:
 
 ```bash
-curl --cacert <(tsm get ca-cert --raw) https://internal.example.com
+curl --cacert <(tsm get ca-cert) https://internal.example.com
 PGPASSFILE=<(tsm get pg-prod --format pgpass) psql --no-password "service=mydb"
 ```
 

@@ -1,0 +1,22 @@
+{
+  "name": "@tashian/tsm-darwin-arm64",
+  "version": "0.0.0",
+  "description": "Prebuilt tsm + tsmd binaries for macOS arm64. Installed automatically by @tashian/tsm.",
+  "license": "MIT",
+  "author": "Carl Tashian",
+  "homepage": "https://github.com/tashian/tsm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tashian/tsm.git"
+  },
+  "files": [
+    "bin/",
+    "LICENSE"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ]
+}

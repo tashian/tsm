@@ -1,0 +1,37 @@
+{
+  "name": "@tashian/tsm",
+  "version": "0.0.0",
+  "description": "Touch ID-gated secrets manager for macOS",
+  "license": "MIT",
+  "author": "Carl Tashian",
+  "homepage": "https://github.com/tashian/tsm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tashian/tsm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tashian/tsm/issues"
+  },
+  "keywords": [
+    "touchid",
+    "secrets",
+    "keychain",
+    "macos",
+    "cli"
+  ],
+  "bin": {
+    "tsm": "tsm"
+  },
+  "files": [
+    "tsm",
+    "shim.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@tashian/tsm-darwin-arm64": "0.0.0"
+  }
+}

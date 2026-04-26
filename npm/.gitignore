@@ -1,0 +1,5 @@
+# Binaries are staged in by scripts/publish-npm.sh from dist/bin/.
+# Keep them out of git so the repo stays binary-free.
+darwin-arm64/bin/tsm
+darwin-arm64/bin/tsmd
+*/LICENSE

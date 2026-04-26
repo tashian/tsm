@@ -55,7 +55,7 @@ parent shell is unaffected; the env var is gone when the child exits.
 Use this for tools that read credentials from environment variables
 (gh GITHUB_TOKEN, AWS_ACCESS_KEY_ID, MCP servers in .mcp.json, etc.).
 For tools that read from files, use 'tsm get --to-file' or process
-substitution: <(tsm get NAME --raw).
+substitution: <(tsm get NAME).
 
 Examples:
   tsm run --env GITHUB_TOKEN=gh-pat -- gh pr list

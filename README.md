@@ -14,7 +14,7 @@ Agents need credentials all the time — for calling `aws`, `gh`, `psql`, `gclou
 - **One Touch ID per session.** Daemon-held TTL, not per-process auth. Default 12h, configurable.
 - **No cloud, no account, no subscription.** One binary, one encrypted file, the system Keychain. No vendor.
 - **Per-secret confirm gate.** Mark high-value secrets `confirm: true` to force Touch ID on every access regardless of vault state.
-- **Safe output modes.** `--raw` for pipes, `<(tsm get … --raw)` for process substitution (file-flag tools), `--to-file` for tools that demand a path. Refuses to write secrets to a TTY.
+- **Safe output modes.** Default raw value for pipes, `<(tsm get …)` for process substitution (file-flag tools), `--to-file` for tools that demand a path. Refuses to write secrets to a TTY.
 - **No secrets in `ps` or shell history.** Values are always read from stdin, a file, or the TUI — never a flag.
 - **First-class agent integration.** `tsm run --env VAR=secret -- cmd` injects credentials into a subprocess for one invocation; `tsm get --format env|aws-credential-process|pgpass` produces tool-specific wire formats. A bundled Claude Code plugin (`plugin/`) ships a permission allowlist and an opinionated skill that teaches the agent which pattern to reach for.
 - **Audit log.** Every access is logged with timestamp, secret id, and client id. `tsm log` to view.
@@ -96,15 +96,14 @@ The display name is shown first; the kebab-case id (used for `tsm get`, env var 
 ### Retrieving
 
 ```bash
-tsm get openai-api-key                       # JSON to stdout
-tsm get openai-api-key --raw | pbcopy        # raw value, refuses to write to a TTY
+tsm get openai-api-key | pbcopy              # raw value to stdout, refuses to write to a TTY
 tsm get openai-api-key --to-file /tmp/key    # mode 0600, no trailing newline
 ```
 
 Inline in a one-shot command — the secret never appears in shell history or `ps`:
 
 ```bash
-curl -H "Authorization: Bearer $(tsm get openai-api-key --raw)" \
+curl -H "Authorization: Bearer $(tsm get openai-api-key)" \
      https://api.openai.com/v1/models
 ```
 

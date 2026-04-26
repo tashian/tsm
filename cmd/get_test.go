@@ -90,19 +90,60 @@ func TestGet_FormatRefusesTTY(t *testing.T) {
 	}
 }
 
-func TestGet_FormatMutexWithRaw(t *testing.T) {
+func TestGet_DefaultWritesBareValueToNonTTY(t *testing.T) {
+	mock := &mockCaller{
+		onCall: func(method string, params map[string]any) (any, error) {
+			if method == "vault.unlock" {
+				return nil, nil
+			}
+			return map[string]string{"name": "gh-pat", "value": "ghp_abc"}, nil
+		},
+	}
+	var stdout bytes.Buffer
+	err := runGetWith(mock, "gh-pat", getOptions{
+		Stdout:    &stdout,
+		StdoutTTY: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != "ghp_abc" {
+		t.Fatalf("got %q, want bare value with no framing or trailing newline", stdout.String())
+	}
+}
+
+func TestGet_DefaultRefusesTTY(t *testing.T) {
+	mock := &mockCaller{
+		onCall: func(method string, params map[string]any) (any, error) {
+			return map[string]string{"name": "n", "value": "v"}, nil
+		},
+	}
+	err := runGetWith(mock, "n", getOptions{
+		Stdout:    &bytes.Buffer{},
+		StdoutTTY: true,
+	})
+	if err == nil {
+		t.Fatal("expected refusal when stdout is a TTY")
+	}
+	if !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("error should mention terminal, got: %v", err)
+	}
+}
+
+func TestGet_RejectsJSONFlag(t *testing.T) {
+	prev := jsonFlag
+	jsonFlag = true
+	t.Cleanup(func() { jsonFlag = prev })
 	mock := &mockCaller{}
 	err := runGetWith(mock, "n", getOptions{
-		Format:    "env FOO",
-		Raw:       true,
 		Stdout:    &bytes.Buffer{},
 		StdoutTTY: false,
 	})
 	if err == nil {
-		t.Fatal("expected mutex error")
+		t.Fatal("expected --json rejection")
 	}
-	if !strings.Contains(err.Error(), "--raw") {
-		t.Fatalf("error should mention --raw, got: %v", err)
+	if !strings.Contains(err.Error(), "--json") {
+		t.Fatalf("error should mention --json, got: %v", err)
 	}
 }
 

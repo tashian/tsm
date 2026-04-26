@@ -1,0 +1,38 @@
+#!/bin/sh
+# tsm wrapper. Finds a JS runtime (node or bun) and runs shim.js, which
+# resolves the platform binary package and execs the real `tsm` binary.
+# We use a JS shim instead of pure shell because require.resolve handles
+# node_modules layout (flat, hoisted, pnpm content-addressable) reliably.
+
+set -eu
+
+# Resolve symlinks: package managers expose us as node_modules/.bin/tsm,
+# which is a symlink to the real wrapper inside the package directory.
+# We need the real path to find shim.js next to ourselves.
+self="$0"
+while [ -L "$self" ]; do
+    link="$(readlink "$self")"
+    case "$link" in
+        /*) self="$link" ;;
+        *)  self="$(cd "$(dirname "$self")" && cd "$(dirname "$link")" && pwd)/$(basename "$link")" ;;
+    esac
+done
+DIR="$(cd "$(dirname "$self")" && pwd)"
+SHIM="$DIR/shim.js"
+
+if [ ! -f "$SHIM" ]; then
+    echo "tsm: shim.js missing from $DIR — package install is corrupt" >&2
+    exit 1
+fi
+
+for rt in node bun; do
+    if command -v "$rt" >/dev/null 2>&1; then
+        exec "$rt" "$SHIM" "$@"
+    fi
+done
+
+cat >&2 <<EOF
+tsm: needs node or bun in PATH to resolve the platform binary package.
+If you have neither, build tsm from source: https://github.com/tashian/tsm
+EOF
+exit 1
