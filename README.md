@@ -16,7 +16,7 @@ Agents need credentials all the time — for calling `aws`, `gh`, `psql`, `gclou
 - **Per-secret confirm gate.** Mark high-value secrets `confirm: true` to force Touch ID on every access regardless of vault state.
 - **Safe output modes.** `--raw` for pipes, `<(tsm get … --raw)` for process substitution (file-flag tools), `--to-file` for tools that demand a path. Refuses to write secrets to a TTY.
 - **No secrets in `ps` or shell history.** Values are always read from stdin, a file, or the TUI — never a flag.
-- **First-class agent integration.** `tsm run --env VAR=secret -- cmd` injects credentials into a subprocess for one invocation; `tsm get --format env|aws-credential-process|pgpass` produces tool-specific wire formats. A bundled Claude Code plugin (`plugin/`) ships a SessionStart hook, a permission allowlist, and an opinionated skill that teaches the agent which pattern to reach for.
+- **First-class agent integration.** `tsm run --env VAR=secret -- cmd` injects credentials into a subprocess for one invocation; `tsm get --format env|aws-credential-process|pgpass` produces tool-specific wire formats. A bundled Claude Code plugin (`plugin/`) ships a permission allowlist and an opinionated skill that teaches the agent which pattern to reach for.
 - **Audit log.** Every access is logged with timestamp, secret id, and client id. `tsm log` to view.
 - **Open source and small.** Auditable Swift daemon (~13 files), Go CLI, JSON-RPC over a Unix socket. No magic.
 
