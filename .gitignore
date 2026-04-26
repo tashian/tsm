@@ -2,6 +2,9 @@
 /tsm
 /tsmd
 
+# Git worktrees
+/.worktrees/
+
 # Go test/coverage output
 *.test
 *.out
