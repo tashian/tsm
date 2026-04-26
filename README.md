@@ -20,30 +20,46 @@ Agents need credentials all the time — for calling `aws`, `gh`, `psql`, `gclou
 - **Audit log.** Every access is logged with timestamp, secret id, and client id. `tsm log` to view.
 - **Open source and small.** Auditable Swift daemon (~13 files), Go CLI, JSON-RPC over a Unix socket. No magic.
 
-## Requirements
+## Installation
 
-- macOS with Touch ID (Apple Silicon recommended)
-- Go 1.25+
-- Swift 5.9+ (Xcode command-line tools)
-
-## Build from source
+Install with bun, npm, or pnpm. Either pulls a prebuilt, sigstore-signed binary for your platform (currently macOS arm64 only).
 
 ```bash
-# Daemon
-cd tsmd
-swift test                                    # ~83 tests
-swift build -c release
-cp .build/release/tsmd ~/.local/bin/tsmd
-cd ..
-
-# CLI
-go test ./...
-go build -o ~/.local/bin/tsm .
+bun install -g @tashian/tsm
+# or: npm install -g @tashian/tsm
+# or: pnpm add -g @tashian/tsm
 ```
 
-Make sure `~/.local/bin` is on your `$PATH`.
+The daemon is auto-spawned on first use — see [Quick start](#quick-start) below.
 
-The daemon must be ad-hoc signed on Apple Silicon — `swift build` does this automatically. Don't strip the signature.
+Verify provenance after install:
+
+```bash
+npm audit signatures -g                 # sigstore signatures on the npm packages
+```
+
+Or, for the GitHub Release tarball:
+
+```bash
+gh attestation verify tsm_<version>_darwin_arm64.tar.gz --repo tashian/tsm
+```
+
+Prefer to compile it yourself? See [Build from source](#build-from-source) at the bottom.
+
+## For Claude Code
+
+Install the bundled plugin to give Claude Code first-class tsm support. This repo is a single-plugin marketplace (`.claude-plugin/marketplace.json` at the root); from inside Claude Code:
+
+```
+/plugin marketplace add tashian/tsm
+/plugin install tsm@tsm
+```
+
+The plugin:
+- Auto-approves read-only and lifecycle `tsm` commands (`list`, `get`, `run`, `status`, `log`, `lock`, `unlock`) so the agent does not prompt on every read.
+- Ships an opinionated `credential-usage` skill that teaches the agent to discover credentials in the vault before asking the user.
+
+The `tsm` CLI auto-spawns the daemon on first use, so no SessionStart hook is needed.
 
 ## Quick start
 
@@ -128,17 +144,34 @@ tsm get gh-pat   --format "env GITHUB_TOKEN"     > /dev/shm/envfile
 
 `tsm get --format` refuses to write to a TTY; always redirect.
 
-### For Claude Code
+## Build requirements
 
-Install the bundled plugin to give Claude Code first-class tsm support. The `plugin/` directory is a single-plugin marketplace; from inside Claude Code:
+- macOS with Touch ID (Apple Silicon recommended)
+- Go 1.25+
+- Swift 5.9+ (Xcode command-line tools)
+
+## Build from source
+
+```bash
+# Daemon
+cd tsmd
+swift test                                    # ~83 tests
+swift build -c release
+cp .build/release/tsmd ~/.local/bin/tsmd
+cd ..
+
+# CLI
+go test ./...
+go build -o ~/.local/bin/tsm .
+```
+
+Make sure `~/.local/bin` is on your `$PATH`.
+
+The daemon must be ad-hoc signed on Apple Silicon — `swift build` does this automatically. Don't strip the signature.
+
+To install the Claude Code plugin from your local clone instead of GitHub:
 
 ```
-/plugin marketplace add /absolute/path/to/tsm/plugin
+/plugin marketplace add /absolute/path/to/tsm
 /plugin install tsm@tsm
 ```
-
-The plugin:
-- Auto-approves read-only and lifecycle `tsm` commands (`list`, `get`, `run`, `status`, `log`, `lock`, `unlock`) so the agent does not prompt on every read.
-- Ships an opinionated `credential-usage` skill that teaches the agent to discover credentials in the vault before asking the user.
-
-The `tsm` CLI auto-spawns the daemon on first use, so no SessionStart hook is needed.
