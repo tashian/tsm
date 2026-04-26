@@ -1,16 +1,14 @@
 # Tiny Secrets Manager
 
-Coding agents need credentials all the time — `aws`, `gh`, `psql`, `gcloud`, MCP servers, anything a skill shells out to. Today those credentials sit in plaintext in `~/.aws/credentials`, `~/.config/gh/hosts.yml`, `~/.pgpass`, `.env` files, and `.mcp.json`. None of it is biometric-gated.
+`tsm` is a Touch-ID-gated secrets manager for coding agents on macOS. Keep API keys, tokens, and passphrases in a local encrypted vault; unlock for 12 hours with a fingerprint, use them across the day. Secrets are stored in memory only.
 
-`tsm` is an MCP-aware Touch-ID-gated secrets manager for macOS. Keep API keys, tokens, and passphrases in a local encrypted vault; unlock once with a fingerprint, use them across the day from the CLI or (eventually) MCP-aware agents.
+## The problem
 
-## Why I built this
+Agents need credentials all the time — for calling `aws`, `gh`, `psql`, `gcloud`, or simply `curl`ing API endpoints. Long-lived, static credentials sit in JSON files (insecurely on disk) or in a heavyweight secrets manager like 1Password.
 
-Coding agents need credentials all the time — `aws`, `gh`, `psql`, `gcloud`, MCP servers, anything a skill shells out to. Today those credentials sit in plaintext in `~/.aws/credentials`, `~/.config/gh/hosts.yml`, `~/.pgpass`, `.env` files, and `.mcp.json`. None of it is biometric-gated. Claude Code itself ships no built-in vault.
+1Password isn't great for this. The 1Password CLI `op` re-prompts for Touch ID on every credential read — sometimes several times in a row during a single agent turn.
 
-I tried doing this with `op` (the 1Password CLI). Every credential access in a Claude Code session re-prompts for Touch ID — sometimes several times in a row. A single agent task that calls `gh` then `aws` then `psql` becomes a Touch ID drumroll.
-
-`tsm` offers a long-lived local daemon, following the `ssh-agent` model. When unlocked, it holds the decrypted master key in RAM. **One Touch ID at session start covers everything** for the next 12 hours — every agent subprocess, every MCP server, every shell command. And, individual secrets can be marked to require touch for every use.
+Following the `ssh-agent` model, `tsm` offers a long-lived local daemon. When unlocked, it holds the decrypted master key in RAM. **One Touch ID at session start covers everything** for the next 12 hours — every agent subprocess, every MCP server, every shell command. And, individual secrets can be marked to require touch for every use.
 
 ## What you get
 
