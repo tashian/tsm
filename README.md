@@ -17,7 +17,7 @@ Following the `ssh-agent` model, `tsm` offers a long-lived local daemon. When un
 - **Per-secret confirm gate.** Mark high-value secrets `confirm: true` to force Touch ID on every access regardless of vault state.
 - **Safe output modes.** `--raw` for pipes, `<(tsm get … --raw)` for process substitution (file-flag tools), `--to-file` for tools that demand a path. Refuses to write secrets to a TTY.
 - **No secrets in `ps` or shell history.** Values are always read from stdin, a file, or the TUI — never a flag.
-- **MCP-native.** (coming soon) `vault_list`, `vault_get`, `vault_status` so an agent can request credentials in-conversation. Read-only by design — agents can't mutate the vault.
+- **First-class agent integration.** `tsm run --env VAR=secret -- cmd` injects credentials into a subprocess for one invocation; `tsm get --format env|aws-credential-process|pgpass` produces tool-specific wire formats. A bundled Claude Code plugin (`plugin/`) ships a SessionStart hook, a permission allowlist, and an opinionated skill that teaches the agent which pattern to reach for.
 - **Audit log.** Every access is logged with timestamp, secret id, and client id. `tsm log` to view.
 - **Open source and small.** Auditable Swift daemon (~13 files), Go CLI, JSON-RPC over a Unix socket. No magic.
 
@@ -31,7 +31,7 @@ Following the `ssh-agent` model, `tsm` offers a long-lived local daemon. When un
 | Account / subscription | None | 1Password account required |
 | Sync across devices | No (one local file; manual copy with recovery passphrase) | Yes |
 | Sharing / shared vaults | No (personal-use only) | Yes |
-| MCP server (coming soon) | Yes (`tsm mcp`) | No |
+| Agent integration | `tsm run` env injection + Claude Code plugin (skill, hook, allowlist) | `op run` |
 | Per-secret "require touch" | Yes | Limited (controlled by 1Password app policy) |
 | Plugin ecosystem (aws, gh, etc.) | Not yet — see [`docs/claude-code-integration.md`](docs/claude-code-integration.md) | Mature (`op plugin init`) |
 | Item types | Secrets only | Secrets, SSH keys, identities, documents, … |
@@ -122,4 +122,39 @@ tsm get openai-api-key                       # JSON to stdout
 tsm get openai-api-key --raw | pbcopy        # raw value, refuses to write to a TTY
 tsm get openai-api-key --to-file /tmp/key    # mode 0600, no trailing newline
 ```
+
+### Running tools with vault-injected env vars
+
+```bash
+tsm run --env GITHUB_TOKEN=gh-pat -- gh pr list
+tsm run --env OPENAI_API_KEY=openai-key -- openai api models.list
+```
+
+The env var lives only inside the child process; the parent shell is unaffected. `tsm run` is what `.mcp.json` configs should use to wrap MCP server commands so the server inherits credentials at startup.
+
+### Output formatters
+
+For tools that read credentials from a specific wire format:
+
+```bash
+tsm get aws-prod --format aws-credential-process > ~/.aws/credentials.json
+tsm get pg-prod  --format pgpass                 > ~/.pgpass
+tsm get gh-pat   --format "env GITHUB_TOKEN"     > /dev/shm/envfile
+```
+
+`tsm get --format` refuses to write to a TTY; always redirect.
+
+### For Claude Code
+
+Install the bundled plugin to give Claude Code first-class tsm support:
+
+```bash
+mkdir -p ~/.claude/plugins
+ln -sf "$PWD/plugin" ~/.claude/plugins/tsm
+```
+
+The plugin:
+- Runs `tsm ensure-daemon` at session start.
+- Auto-approves read-only `tsm` commands (`list`, `get`, `run`, `status`, `log`, `lock`, `unlock`, `ensure-daemon`) so the agent does not prompt on every read.
+- Ships an opinionated `credential-usage` skill that teaches the agent to discover credentials in the vault before asking the user.
 
