@@ -1,0 +1,33 @@
+# Binaries built at repo root
+/tsm
+/tsmd
+
+# Go test/coverage output
+*.test
+*.out
+coverage.txt
+coverage.html
+*.coverprofile
+
+# Go workspace
+go.work
+go.work.sum
+
+# Swift / SwiftPM build artifacts
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/
+
+# macOS
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Environment / local config
+.env
+.env.local
