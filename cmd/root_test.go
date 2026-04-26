@@ -10,7 +10,7 @@ func TestRootCmd_HasAllSubcommands(t *testing.T) {
 		"version", "status", "lock", "unlock",
 		"ensure-daemon", "list", "init", "add",
 		"get", "edit", "remove", "reset",
-		"config", "log",
+		"config", "log", "run",
 	}
 	commands := make(map[string]bool)
 	for _, c := range root.Commands() {
