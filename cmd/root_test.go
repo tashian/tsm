@@ -8,7 +8,7 @@ func TestRootCmd_HasAllSubcommands(t *testing.T) {
 	root := NewRootCmd()
 	expected := []string{
 		"version", "status", "lock", "unlock",
-		"ensure-daemon", "list", "init", "add",
+		"list", "init", "add",
 		"get", "edit", "remove", "reset",
 		"config", "log", "run",
 	}

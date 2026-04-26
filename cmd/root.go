@@ -13,7 +13,7 @@ func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "tsm",
 		Short:         "Tiny Secrets Manager — biometric-authenticated secrets for AI agents",
-		Long:          "tsm stores secrets in an encrypted vault protected by Touch ID.\nIt runs a local daemon and exposes secrets via CLI and MCP.",
+		Long:          "tsm stores secrets in an encrypted vault protected by Touch ID.\nIt runs a local daemon that the CLI auto-spawns on first use.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -25,7 +25,6 @@ func NewRootCmd() *cobra.Command {
 		newStatusCmd(),
 		newLockCmd(),
 		newUnlockCmd(),
-		newEnsureDaemonCmd(),
 		newListCmd(),
 		newInitCmd(),
 		newAddCmd(),

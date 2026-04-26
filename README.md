@@ -154,7 +154,7 @@ ln -sf "$PWD/plugin" ~/.claude/plugins/tsm
 ```
 
 The plugin:
-- Runs `tsm ensure-daemon` at session start.
-- Auto-approves read-only and lifecycle `tsm` commands (`list`, `get`, `run`, `status`, `log`, `lock`, `unlock`, `ensure-daemon`) so the agent does not prompt on every read.
+- Auto-approves read-only and lifecycle `tsm` commands (`list`, `get`, `run`, `status`, `log`, `lock`, `unlock`) so the agent does not prompt on every read.
 - Ships an opinionated `credential-usage` skill that teaches the agent to discover credentials in the vault before asking the user.
 
+The `tsm` CLI auto-spawns the daemon on first use, so no SessionStart hook is needed.
