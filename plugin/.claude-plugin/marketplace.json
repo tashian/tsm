@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "tsm",
-      "source": ".",
+      "source": "./tsm",
       "description": "Touch-ID-gated secrets manager for AI coding agents on macOS."
     }
   ]
