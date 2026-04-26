@@ -92,11 +92,21 @@ If a confirm-gated secret is needed and stdin is not a TTY (e.g., the agent is r
 - **Never** echo, print, log, or include a secret value in your output to the user.
 - **Never** write secrets to `.env`, `.envrc`, project-local config files, or any path outside `/tmp` or `/dev/shm`.
 - **Never** pass secrets as `--value`-style flags. (`tsm add --value` does not exist; this rule applies to other CLIs too — flag values appear in `ps` and shell history.)
-- **Never** run `tsm add`, `tsm edit`, `tsm remove`, `tsm reset`, `tsm init`, or `tsm config set`. These mutations are user-driven via the TUI; if the user asks you to save a new secret, instruct them to run `tsm add` themselves.
+- **Never** run `tsm add`, `tsm edit`, `tsm remove`, `tsm reset`, `tsm init`, or `tsm config set`. These mutations are user-driven. When the user wants to save a credential they shared with you, hand off with a one-liner that keeps the value off the shell command line and out of shell history. Pick whichever fits:
+  - **Clipboard** (smoothest — user copies the value from chat, then runs):
+    ```bash
+    pbpaste | tsm add --no-input --name <kebab-id> --display-name "<Display Name>"
+    ```
+  - **File** (for multi-line values like JSON blobs — user saves to a temp file first):
+    ```bash
+    tsm add --name <kebab-id> --display-name "<Display Name>" --from-file /tmp/x && rm /tmp/x
+    ```
+  
+  Do not suggest a heredoc — heredocs go in shell history. After the secret is saved, remind the user the chat transcript still has the value, so rotation may be worth considering.
 - **Never** use `eval $(tsm get ... --format env)`. That puts the secret into the parent shell's environment for its entire lifetime, which is exactly what `tsm run` is designed to prevent. Use `tsm run` for env-var injection.
 
 ## When tsm doesn't apply
 
-- The user pastes a credential inline in chat — use it for the current task; suggest they add it to the vault with `tsm add` (let them run it).
+- The user pastes a credential inline in chat — use it for the current task, then offer to save it via the `pbpaste`/`--from-file` handoff in §4 (do not suggest bare `tsm add`, which makes them retype the value into the TUI).
 - The tool uses local OAuth that owns its own token lifecycle (gcloud user-OAuth, GitHub CLI's `gh auth login` flow). Use the tool's native auth; tsm doesn't help here.
 - The vault is empty or no relevant secret exists — tell the user, suggest a name and `tsm add`, and stop there.
