@@ -146,11 +146,11 @@ tsm get gh-pat   --format "env GITHUB_TOKEN"     > /dev/shm/envfile
 
 ### For Claude Code
 
-Install the bundled plugin to give Claude Code first-class tsm support:
+Install the bundled plugin to give Claude Code first-class tsm support. The `plugin/` directory is a single-plugin marketplace; from inside Claude Code:
 
-```bash
-mkdir -p ~/.claude/plugins
-ln -sf "$PWD/plugin" ~/.claude/plugins/tsm
+```
+/plugin marketplace add /absolute/path/to/tsm/plugin
+/plugin install tsm@tsm
 ```
 
 The plugin:

@@ -9,13 +9,16 @@ The `tsm` CLI auto-spawns the `tsmd` daemon on first use, so no SessionStart hoo
 
 ## Install (local development)
 
-Symlink this directory into your Claude Code plugins directory:
+This directory is a single-plugin Claude Code marketplace — `.claude-plugin/marketplace.json` lists the plugin co-located in the same directory. Inside Claude Code:
 
-```bash
-ln -s "$PWD/plugin" "$HOME/.claude/plugins/tsm"
+```
+/plugin marketplace add /absolute/path/to/tsm/plugin
+/plugin install tsm@tsm
 ```
 
-Restart Claude Code; the plugin's allowlist and skill take effect on the next session.
+(`tsm@tsm` = plugin name `tsm` from marketplace name `tsm`.) Confirm with `/plugin` — it should appear under the **Installed** tab.
+
+For ad-hoc testing without installing, you can also start Claude Code with `--plugin-dir` pointing at this directory.
 
 ## Requires
 
