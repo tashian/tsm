@@ -56,7 +56,7 @@ Process substitution keeps the secret off disk entirely:
 
 ```bash
 curl --cacert <(tsm get ca-cert --raw) https://internal.example.com
-psql --no-password "service=mydb" < /dev/null  # PGPASSFILE=<(tsm get pg-prod --format pgpass)
+PGPASSFILE=<(tsm get pg-prod --format pgpass) psql --no-password "service=mydb"
 ```
 
 If the tool re-reads the file after first read, write to `/dev/shm` (memory-backed on Linux, ramdisk on macOS):

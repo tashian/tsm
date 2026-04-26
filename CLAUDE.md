@@ -2,7 +2,7 @@
 
 `tsm` is a Touch-ID-gated secrets manager for macOS. Two halves in one repo:
 
-- **Go CLI** (`tsm`) at the repo root — user-facing commands, MCP server (planned).
+- **Go CLI** (`tsm`) at the repo root — user-facing commands and agent integration.
 - **Swift daemon** (`tsmd`) in `tsmd/` — owns the encrypted vault, Keychain, Touch ID, audit log.
 
 They communicate via newline-delimited JSON-RPC 2.0 over a Unix socket. The CLI auto-spawns the daemon on first use.
