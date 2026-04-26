@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,7 +8,6 @@ import (
 	"strings"
 
 	"tsm/internal/client"
-	"tsm/internal/jsonrpc"
 	"tsm/internal/runspec"
 
 	"github.com/spf13/cobra"
@@ -82,12 +80,19 @@ Examples:
 
 func runWith(c client.Caller, opts runOptions) error {
 	if len(opts.Argv) == 0 {
-		return errors.New("missing target command (usage: tsm run --env VAR=secret -- <command> [args...])")
+		return fmt.Errorf("missing target command (usage: tsm run --env VAR=secret -- <command> [args...])")
 	}
 
 	mappings, err := runspec.Parse(opts.Envs)
 	if err != nil {
 		return err
+	}
+
+	// Resolve target before any daemon calls — fail fast on PATH errors so the
+	// user doesn't authenticate just to hit "not found".
+	targetPath, err := opts.LookPath(opts.Argv[0])
+	if err != nil {
+		return fmt.Errorf("command %q not found in PATH", opts.Argv[0])
 	}
 
 	// Unlock vault (Touch ID once, upfront) before any vault.get.
@@ -118,13 +123,6 @@ func runWith(c client.Caller, opts runOptions) error {
 		}
 	}
 
-	// Resolve target before triggering Touch ID for vault.get — fail fast on
-	// PATH errors so the user doesn't authenticate just to hit "not found".
-	targetPath, err := opts.LookPath(opts.Argv[0])
-	if err != nil {
-		return fmt.Errorf("command %q not found in PATH", opts.Argv[0])
-	}
-
 	// Resolve secrets, deduplicated by secret name.
 	values := map[string]string{} // secret name -> value
 	for _, name := range runspec.UniqueSecrets(mappings) {
@@ -137,10 +135,7 @@ func runWith(c client.Caller, opts runOptions) error {
 			"client_id": runClientID(path.Base(targetPath)),
 		}
 		if err := c.Call("vault.get", params, &s); err != nil {
-			if rpcErr, ok := err.(*jsonrpc.RPCError); ok {
-				return errors.New(formatRPCError(rpcErr))
-			}
-			return err
+			return handleError(err)
 		}
 		values[name] = s.Value
 	}
