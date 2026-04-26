@@ -42,7 +42,3 @@ release VERSION: (package VERSION)
         dist/release/checksums.txt \
         --title "v{{VERSION}}" \
         --generate-notes
-
-# Publish both npm packages: platform package first, wrapper second
-publish-npm VERSION:
-    ./scripts/publish-npm.sh {{VERSION}}

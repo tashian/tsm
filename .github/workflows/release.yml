@@ -52,5 +52,29 @@ jobs:
             --title "v${{ steps.ver.outputs.version }}" \
             --generate-notes
 
-      - name: Publish npm packages
-        run: just publish-npm ${{ steps.ver.outputs.version }}
+      - name: Stage npm platform package
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p npm/darwin-arm64/bin
+          cp dist/bin/tsm dist/bin/tsmd npm/darwin-arm64/bin/
+          chmod +x npm/darwin-arm64/bin/tsm npm/darwin-arm64/bin/tsmd
+          cp LICENSE npm/darwin-arm64/LICENSE
+          cp LICENSE npm/wrapper/LICENSE
+          jq --arg v "$VERSION" '.version = $v' \
+            npm/darwin-arm64/package.json > npm/darwin-arm64/package.json.tmp
+          mv npm/darwin-arm64/package.json.tmp npm/darwin-arm64/package.json
+          jq --arg v "$VERSION" \
+            '.version = $v | .optionalDependencies["@tashian/tsm-darwin-arm64"] = $v' \
+            npm/wrapper/package.json > npm/wrapper/package.json.tmp
+          mv npm/wrapper/package.json.tmp npm/wrapper/package.json
+
+      # Publish order matters: platform first so the wrapper's
+      # optionalDependencies resolve when the wrapper hits the registry.
+      - name: Publish @tashian/tsm-darwin-arm64
+        working-directory: npm/darwin-arm64
+        run: npm publish --provenance --access public
+
+      - name: Publish @tashian/tsm
+        working-directory: npm/wrapper
+        run: npm publish --provenance --access public
