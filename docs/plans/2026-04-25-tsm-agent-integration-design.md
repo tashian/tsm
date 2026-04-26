@@ -37,7 +37,7 @@ Out of scope (deferred to future plans):
 |---|---|
 | `tsmd` (Swift daemon) | **No change.** `vault.get` already returns values and handles `confirm`-gated Touch ID. Plan 3 is pure CLI + plugin work. |
 | `cmd/run.go` | New cobra subcommand. |
-| `cmd/get.go` | Adds `--format <name>` flag, with `--export` modifier for `env` formatter. |
+| `cmd/get.go` | Adds `--format <name>` flag. |
 | `internal/format/` | New package. `Formatter` interface + built-in registry (`env`, `aws-credential-process`, `pgpass`). |
 | `internal/runspec/` | New package. Parses `--env VAR=name` flags into validated mappings. |
 | `plugin/` | New top-level dir. Plugin manifest, hook, skill, settings. |
@@ -98,14 +98,16 @@ There is **no override flag** for this. If a workflow legitimately needs the sec
 
 ### Audit
 
-Each `vault.get` call is logged by the daemon as it is today. `tsm run` does not add tsm-side audit beyond what the daemon already records. The daemon's `client_id` field captures the calling process; `tsm run` sets `client_id = "tsm-run/pid:<pid-of-tsm>"` so the access log shows `tsm run` as the originator.
+Each `vault.get` call is logged by the daemon as it is today. `tsm run` does not add tsm-side audit beyond what the daemon already records. The daemon's `client_id` field captures the calling process; `tsm run` sets `client_id = "tsm-run/pid:<pid-of-tsm>/<target-basename>"` (e.g., `tsm-run/pid:1234/gh`). Including the target basename makes the access log self-describing — readers can see which downstream tool consumed the secret without correlating PIDs.
+
+The basename is `path.Base` of the resolved target (after `exec.LookPath`), not arbitrary user-supplied input. It contains no arg strings or path components; the kebab/alphanumeric character set already in `client_id` is preserved.
 
 ## `tsm get --format`
 
 ### Command surface
 
 ```
-tsm get <name> --format <formatter> [--export]
+tsm get <name> --format <formatter>
 ```
 
 `--format` is mutually exclusive with `--raw`, `--to-file`, and `--json`. (Default `tsm get` output is JSON; specifying `--format` swaps the output shape.)
@@ -114,11 +116,13 @@ tsm get <name> --format <formatter> [--export]
 
 | Formatter | Output | Validation |
 |---|---|---|
-| `env VAR` | `VAR=value\n` (or `export VAR=value\n` with `--export`) | `VAR` must match `^[A-Z_][A-Z0-9_]*$` |
+| `env VAR` | `VAR=value\n` | `VAR` must match `^[A-Z_][A-Z0-9_]*$` |
 | `aws-credential-process` | The stored value, verbatim, after validation | Parse value as JSON; require keys `Version`, `AccessKeyId`, `SecretAccessKey`. Reject otherwise with guidance on shape. |
 | `pgpass` | The stored value, verbatim, after validation | Reject if value contains a newline or does not have exactly 5 colon-delimited fields |
 
 The `env` formatter takes its `VAR` argument inline: `tsm get gh-pat --format "env GITHUB_TOKEN"`. Other formatters take no arguments.
+
+**Note on intended use.** `--format env VAR` is for writing env-file-shaped output to a file (`tsm get gh-pat --format "env GITHUB_TOKEN" > /dev/shm/myenv`, then `docker run --env-file /dev/shm/myenv ...`). It is **not** for `eval`-ing into the current shell — that pattern leaks the secret into the parent shell's environment, where it persists for the shell's lifetime and propagates to every later child process. Use `tsm run` instead.
 
 ### TTY refusal
 
@@ -309,10 +313,7 @@ Stderr messages are stable enough to grep against if needed, but exit codes are 
 
 ## Open questions
 
-None blocking. Items the implementation plan should re-examine if they become awkward in code:
-
-1. Whether `tsm run`'s `client_id` should be `tsm-run/pid:<pid>` or include the target command name (e.g., `tsm-run/pid:1234/gh`). Including the command improves audit log readability but couples the audit format to user-supplied input. My lean: `pid` only; the target is incidental.
-2. Whether `--export` is the right name for the `env` formatter modifier, or if a separate formatter `env-export` is clearer. My lean: keep `--export`; it composes naturally and doesn't require a second registry entry.
+None at design time. (Earlier drafts left the `client_id` format and an `env`-formatter `--export` modifier as open questions; both have been resolved — `client_id` includes the target basename, and `--export` is dropped.)
 
 ## Non-goals (restated)
 
