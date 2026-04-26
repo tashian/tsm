@@ -25,6 +25,12 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
+      # npm Trusted Publishing OIDC requires npm >= 11.5.1.
+      # Node 22 LTS ships npm 10.x, which silently falls back to anonymous
+      # publishing — that fails as 404 against scoped packages.
+      - name: Upgrade npm for Trusted Publishing OIDC
+        run: npm install -g npm@latest
+
       - uses: extractions/setup-just@v4
 
       - name: Derive version from tag
