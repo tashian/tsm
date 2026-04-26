@@ -4,5 +4,8 @@
   "description": "Touch-ID-gated secrets for AI coding agents. Provides safe credential injection for tools and MCP servers.",
   "author": {
     "name": "Carl Tashian"
-  }
+  },
+  "repository": "https://github.com/tashian/tsm",
+  "license": "MIT",
+  "keywords": ["tsm", "secrets", "credentials", "macos", "touch-id"]
 }

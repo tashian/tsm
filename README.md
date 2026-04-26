@@ -1,6 +1,6 @@
 # Tiny Secrets Manager
 
-`tsm` is a Touch-ID-gated secrets manager for coding agents on macOS. Keep API keys, tokens, and passphrases in a local encrypted vault; unlock for 12 hours with a fingerprint, use them across the day. Secrets are stored in memory only.
+`tsm` is a secrets manager for coding agents on macOS. Keep credentials in an encrypted file; unlock for 12 hours with Touch ID, use them across the day. Following the `ssh-agent` model, the `tsmd` daemon runs on-demand and stores secrets in memory only. When unlocked, it holds the decrypted master key in RAM. Individual secrets can be marked to require touch on each use.
 
 ## The problem
 
@@ -8,7 +8,6 @@ Agents need credentials all the time — for calling `aws`, `gh`, `psql`, `gclou
 
 1Password isn't great for this. The 1Password CLI `op` re-prompts for Touch ID on every credential read — sometimes several times in a row during a single agent turn.
 
-Following the `ssh-agent` model, `tsm` offers a long-lived local daemon. When unlocked, it holds the decrypted master key in RAM. **One Touch ID at session start covers everything** for the next 12 hours — every agent subprocess, every MCP server, every shell command. And, individual secrets can be marked to require touch for every use.
 
 ## What you get
 
@@ -20,27 +19,6 @@ Following the `ssh-agent` model, `tsm` offers a long-lived local daemon. When un
 - **First-class agent integration.** `tsm run --env VAR=secret -- cmd` injects credentials into a subprocess for one invocation; `tsm get --format env|aws-credential-process|pgpass` produces tool-specific wire formats. A bundled Claude Code plugin (`plugin/`) ships a SessionStart hook, a permission allowlist, and an opinionated skill that teaches the agent which pattern to reach for.
 - **Audit log.** Every access is logged with timestamp, secret id, and client id. `tsm log` to view.
 - **Open source and small.** Auditable Swift daemon (~13 files), Go CLI, JSON-RPC over a Unix socket. No magic.
-
-## How it compares to `op` (1Password CLI)
-
-`op` is a strong tool with a much broader scope; tsm only makes sense if you want a narrow, local, agent-shaped tool.
-
-| | tsm | op |
-|---|---|---|
-| Touch ID per session | One prompt for the whole TTL window | Re-prompts per CLI invocation, gated by app policy |
-| Account / subscription | None | 1Password account required |
-| Sync across devices | No (one local file; manual copy with recovery passphrase) | Yes |
-| Sharing / shared vaults | No (personal-use only) | Yes |
-| Agent integration | `tsm run` env injection + Claude Code plugin (skill, hook, allowlist) | `op run` |
-| Per-secret "require touch" | Yes | Limited (controlled by 1Password app policy) |
-| Plugin ecosystem (aws, gh, etc.) | Not yet — see [`docs/claude-code-integration.md`](docs/claude-code-integration.md) | Mature (`op plugin init`) |
-| Item types | Secrets only | Secrets, SSH keys, identities, documents, … |
-| Source available | Yes | No |
-| Platforms | macOS (Apple Silicon) | macOS, Linux, Windows, mobile |
-
-**Use `op` if** you want one tool for your whole identity layer across devices, with sharing, sync, and a mature plugin set.
-
-**Use `tsm` if** you want a local-only credential vault sized for a developer machine and an agent's session, with one Touch ID covering many calls and no subscription.
 
 ## Requirements
 

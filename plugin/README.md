@@ -7,18 +7,25 @@ Adds first-class tsm credential support to Claude Code:
 
 The `tsm` CLI auto-spawns the `tsmd` daemon on first use, so no SessionStart hook is needed — the first agent call (typically `tsm list --json`) brings it up transparently.
 
-## Install (local development)
+## Install
 
-This directory is a single-plugin Claude Code marketplace — `.claude-plugin/marketplace.json` lists the plugin co-located in the same directory. Inside Claude Code:
+Inside Claude Code:
 
 ```
-/plugin marketplace add /absolute/path/to/tsm/plugin
+/plugin marketplace add tashian/tsm
 /plugin install tsm@tsm
 ```
 
-(`tsm@tsm` = plugin name `tsm` from marketplace name `tsm`.) Confirm with `/plugin` — it should appear under the **Installed** tab.
+(`tsm@tsm` = plugin name `tsm` from marketplace name `tsm`.) Confirm with `/plugin` — it should appear under the **Installed** tab. Run `/reload-plugins` to apply.
 
-For ad-hoc testing without installing, you can also start Claude Code with `--plugin-dir` pointing at this directory.
+### Local development
+
+The marketplace is registered at the repository root (`.claude-plugin/marketplace.json`), so you can also point at a local checkout:
+
+```
+/plugin marketplace add /absolute/path/to/tsm
+/plugin install tsm@tsm
+```
 
 ## Requires
 
