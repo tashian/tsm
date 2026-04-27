@@ -304,24 +304,29 @@ final class VaultTests: XCTestCase {
         try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
         try await vault.unlock(sessionID: sidB)
         await vault.lockAll()
-        XCTAssertTrue(await vault.status(sessionID: sidA).locked)
-        XCTAssertTrue(await vault.status(sessionID: sidB).locked)
+        let statusA = await vault.status(sessionID: sidA)
+        let statusB = await vault.status(sessionID: sidB)
+        XCTAssertTrue(statusA.locked)
+        XCTAssertTrue(statusB.locked)
     }
 
     func testLockSingleSessionDoesNotAffectOthers() async throws {
         try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
         try await vault.unlock(sessionID: sidB)
         await vault.lock(sessionID: sidA)
-        XCTAssertTrue(await vault.status(sessionID: sidA).locked)
-        XCTAssertFalse(await vault.status(sessionID: sidB).locked)
+        let statusA = await vault.status(sessionID: sidA)
+        let statusB = await vault.status(sessionID: sidB)
+        XCTAssertTrue(statusA.locked)
+        XCTAssertFalse(statusB.locked)
     }
 
     func testTTLExpiryRemovesSessionAndZeroesKeyWhenLast() async throws {
         try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
-        try await vault.setConfig(ttlSeconds: 1, sessionID: sidA)
+        _ = try await vault.setConfig(ttlSeconds: 1, sessionID: sidA)
         await vault._testForceUnlockTime(sessionID: sidA, to: Date(timeIntervalSinceNow: -10))
         await vault.checkTTL()
-        XCTAssertTrue(await vault.status(sessionID: sidA).locked)
+        let statusA = await vault.status(sessionID: sidA)
+        XCTAssertTrue(statusA.locked)
     }
 
     func testSetConfigRejectsZeroTTL() async throws {
@@ -346,7 +351,7 @@ final class VaultTests: XCTestCase {
 
     func testUnlockRequiresAuthForExpiredSameSession() async throws {
         try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
-        try await vault.setConfig(ttlSeconds: 1, sessionID: sidA)
+        _ = try await vault.setConfig(ttlSeconds: 1, sessionID: sidA)
         // Make the session look 10 seconds old (well past 1-second TTL).
         await vault._testForceUnlockTime(sessionID: sidA, to: Date(timeIntervalSinceNow: -10))
         auth.authenticateCalled = false

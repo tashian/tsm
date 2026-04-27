@@ -7,9 +7,9 @@ actor JSONRPCHandler {
         self.vault = vault
     }
 
-    func handle(_ request: JSONRPCRequest) async -> JSONRPCResponse {
+    func handle(_ request: JSONRPCRequest, sessionID: pid_t) async -> JSONRPCResponse {
         do {
-            let result = try await dispatch(request)
+            let result = try await dispatch(request, sessionID: sessionID)
             return JSONRPCResponse(result: result, id: request.id)
         } catch let error as VaultError {
             return JSONRPCResponse(error: mapVaultError(error), id: request.id)
@@ -26,17 +26,17 @@ actor JSONRPCHandler {
         }
     }
 
-    private func dispatch(_ req: JSONRPCRequest) async throws -> JSONValue {
+    private func dispatch(_ req: JSONRPCRequest, sessionID: pid_t) async throws -> JSONValue {
         switch req.method {
         case "vault.init":
             let passphrase = req.stringParam("recovery_passphrase")
-            try await vault.initialize(recoveryPassphrase: passphrase)
+            try await vault.initialize(recoveryPassphrase: passphrase, sessionID: sessionID)
             return .object(["ok": .bool(true)])
 
         case "vault.unlock":
             let passphrase = req.stringParam("passphrase")
-            try await vault.unlock(passphrase: passphrase)
-            let status = await vault.status()
+            try await vault.unlock(passphrase: passphrase, sessionID: sessionID)
+            let status = await vault.status(sessionID: sessionID)
             var resp: [String: JSONValue] = ["ok": .bool(true)]
             if let ttl = status.ttlRemainingSeconds {
                 resp["ttl_remaining_seconds"] = .int(ttl)
@@ -44,15 +44,15 @@ actor JSONRPCHandler {
             return .object(resp)
 
         case "vault.lock":
-            await vault.lock()
+            await vault.lock(sessionID: sessionID)
             return .object(["ok": .bool(true)])
 
         case "vault.status":
-            let status = await vault.status()
+            let status = await vault.status(sessionID: sessionID)
             return encodeToJSONValue(status)
 
         case "vault.list":
-            let secrets = try await vault.list()
+            let secrets = try await vault.list(sessionID: sessionID)
             return encodeToJSONValue(secrets)
 
         case "vault.get":
@@ -60,7 +60,7 @@ actor JSONRPCHandler {
                 throw VaultError.invalidName("Missing 'name' parameter")
             }
             let clientId = req.stringParam("client_id")
-            let secret = try await vault.get(name: name, clientId: clientId)
+            let secret = try await vault.get(name: name, sessionID: sessionID, clientId: clientId)
             return .object(["name": .string(secret.name), "value": .string(secret.value)])
 
         case "vault.add":
@@ -80,7 +80,7 @@ actor JSONRPCHandler {
             let clientId = req.stringParam("client_id")
             try await vault.add(name: name, displayName: displayName, value: value,
                                description: description, confirm: confirm, tags: tags,
-                               clientId: clientId)
+                               sessionID: sessionID, clientId: clientId)
             return .object(["ok": .bool(true)])
 
         case "vault.remove":
@@ -88,7 +88,7 @@ actor JSONRPCHandler {
                 throw VaultError.invalidName("Missing 'name' parameter")
             }
             let clientId = req.stringParam("client_id")
-            try await vault.remove(name: name, clientId: clientId)
+            try await vault.remove(name: name, sessionID: sessionID, clientId: clientId)
             return .object(["ok": .bool(true)])
 
         case "vault.edit":
@@ -108,9 +108,21 @@ actor JSONRPCHandler {
                     }
                     return nil
                 }(),
+                sessionID: sessionID,
                 clientId: clientId
             )
             return .object(["ok": .bool(true)])
+
+        case "vault.config.get":
+            let cfg = try await vault.getConfig(sessionID: sessionID)
+            return .object(["ttl_seconds": .int(cfg.ttlSeconds)])
+
+        case "vault.config.set":
+            guard let ttl = req.param("ttl_seconds")?.intValue else {
+                throw VaultError.invalidConfig("Missing or non-integer 'ttl_seconds' parameter")
+            }
+            let cfg = try await vault.setConfig(ttlSeconds: ttl, sessionID: sessionID)
+            return .object(["ttl_seconds": .int(cfg.ttlSeconds)])
 
         case "vault.reset":
             let clientId = req.stringParam("client_id")
@@ -164,6 +176,11 @@ actor JSONRPCHandler {
                 message: "Secret already exists: \(name)"
             )
         case .invalidName(let msg):
+            return JSONRPCError(
+                code: RPCErrorCode.invalidParams,
+                message: msg
+            )
+        case .invalidConfig(let msg):
             return JSONRPCError(
                 code: RPCErrorCode.invalidParams,
                 message: msg

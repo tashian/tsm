@@ -25,10 +25,11 @@ final class SocketServerTests: XCTestCase {
         server = SocketServer(socketPath: socketPath, handler: handler)
         try server.start()
 
-        // Initialize the vault
-        _ = await handler.handle(JSONRPCRequest(
-            jsonrpc: "2.0", method: "vault.init", params: nil, id: .int(0)
-        ))
+        // Initialize the vault via the socket so it uses the same session ID
+        // as subsequent socket-level requests from this test process.
+        _ = try sendRequest("""
+        {"jsonrpc":"2.0","method":"vault.init","id":0}
+        """)
     }
 
     override func tearDown() {

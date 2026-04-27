@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum SocketError: Error {
     case createFailed(Int32)
@@ -23,6 +24,15 @@ final class SocketServer: @unchecked Sendable {
     init(socketPath: String, handler: JSONRPCHandler) {
         self.socketPath = socketPath
         self.handler = handler
+    }
+
+    private func peerSessionID(fd: Int32) -> pid_t? {
+        var pid: pid_t = 0
+        var len = socklen_t(MemoryLayout<pid_t>.size)
+        let rc = getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &len)
+        guard rc == 0, pid > 0 else { return nil }
+        let sid = getsid(pid)
+        return sid > 0 ? sid : nil
     }
 
     func start() throws {
@@ -69,7 +79,11 @@ final class SocketServer: @unchecked Sendable {
             guard let self = self else { return }
             let clientFd = accept(self.serverFd, nil, nil)
             guard clientFd >= 0 else { return }
-            Task { await self.handleConnection(clientFd) }
+            guard let sid = self.peerSessionID(fd: clientFd) else {
+                close(clientFd)
+                return
+            }
+            Task { await self.handleConnection(clientFd, sessionID: sid) }
         }
         source.setCancelHandler { [serverFd = self.serverFd] in
             close(serverFd)
@@ -84,7 +98,7 @@ final class SocketServer: @unchecked Sendable {
         unlink(socketPath)
     }
 
-    private func handleConnection(_ fd: Int32) async {
+    private func handleConnection(_ fd: Int32, sessionID: pid_t) async {
         defer { close(fd) }
 
         var buffer = Data()
@@ -120,7 +134,7 @@ final class SocketServer: @unchecked Sendable {
                     continue
                 }
 
-                let response = await handler.handle(request)
+                let response = await handler.handle(request, sessionID: sessionID)
                 writeResponse(response, to: fd)
 
                 if request.method == "daemon.shutdown" {

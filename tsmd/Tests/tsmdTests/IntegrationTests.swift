@@ -26,8 +26,8 @@ final class IntegrationTests: XCTestCase {
         try? FileManager.default.removeItem(atPath: tmpDir)
     }
 
-    private func rpc(_ method: String, params: [String: JSONValue]? = nil) async -> JSONRPCResponse {
-        await handler.handle(JSONRPCRequest(jsonrpc: "2.0", method: method, params: params, id: .int(1)))
+    private func rpc(_ method: String, params: [String: JSONValue]? = nil, sessionID: pid_t = 1001) async -> JSONRPCResponse {
+        await handler.handle(JSONRPCRequest(jsonrpc: "2.0", method: method, params: params, id: .int(1)), sessionID: sessionID)
     }
 
     func testFullLifecycle() async throws {
