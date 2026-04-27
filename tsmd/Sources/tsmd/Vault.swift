@@ -73,7 +73,7 @@ actor Vault {
 
     private var data: VaultData?
     private var masterKey: Data?
-    private var unlockTime: Date?
+    private var unlockedSessions: [pid_t: Date] = [:]
 
     init(crypto: CryptoProvider, keychain: KeychainProvider, auth: AuthProvider,
          store: VaultStoreProvider, accessLog: AccessLogProvider) {
@@ -86,9 +86,14 @@ actor Vault {
 
     var isLocked: Bool { data == nil }
 
+    // Convenience for legacy unlockTime compatibility (used internally only).
+    private var unlockTime: Date? {
+        unlockedSessions.values.max()
+    }
+
     // MARK: - Init
 
-    func initialize(recoveryPassphrase: String?) async throws {
+    func initialize(recoveryPassphrase: String?, sessionID: pid_t) async throws {
         guard !store.exists() else { throw VaultError.alreadyInitialized }
         try await auth.authenticate(reason: "Create new tsm vault")
 
@@ -96,7 +101,7 @@ actor Vault {
         var recovery: RecoveryParams? = nil
 
         if let passphrase = recoveryPassphrase {
-            let salt = crypto.generateKey() // 32 random bytes
+            let salt = crypto.generateKey()
             recovery = RecoveryParams(salt: salt.base64EncodedString(), iterations: 600_000)
             key = try crypto.deriveKey(passphrase: passphrase, salt: salt, iterations: 600_000)
         } else {
@@ -106,60 +111,96 @@ actor Vault {
         try keychain.storeMasterKey(key)
         self.masterKey = key
         self.data = VaultData()
-        self.unlockTime = Date()
+        self.unlockedSessions[sessionID] = Date()
         try persist(recovery: recovery)
     }
 
     // MARK: - Unlock / Lock
 
-    func unlock(passphrase: String? = nil) async throws {
+    func unlock(passphrase: String? = nil, sessionID: pid_t) async throws {
         guard store.exists() else { throw VaultError.notInitialized }
-        guard isLocked else { return }
 
-        let key: Data
-        if let passphrase = passphrase {
-            let envelope = try store.read()
-            guard let recovery = envelope.recovery,
-                  let salt = Data(base64Encoded: recovery.salt) else {
-                throw VaultError.authFailed
+        if data == nil {
+            let key: Data
+            if let passphrase = passphrase {
+                let envelope = try store.read()
+                guard let recovery = envelope.recovery,
+                      let salt = Data(base64Encoded: recovery.salt) else {
+                    throw VaultError.authFailed
+                }
+                key = try crypto.deriveKey(
+                    passphrase: passphrase, salt: salt, iterations: recovery.iterations
+                )
+            } else {
+                try await auth.authenticate(reason: "Unlock tsm vault")
+                key = try keychain.retrieveMasterKey()
             }
-            key = try crypto.deriveKey(
-                passphrase: passphrase, salt: salt, iterations: recovery.iterations
-            )
-        } else {
-            try await auth.authenticate(reason: "Unlock tsm vault")
-            key = try keychain.retrieveMasterKey()
+
+            let envelope = try store.read()
+            guard let nonce = Data(base64Encoded: envelope.nonce),
+                  let ciphertext = Data(base64Encoded: envelope.ciphertext) else {
+                throw CryptoError.decryptionFailed("Invalid base64 in vault envelope")
+            }
+            let plaintext = try crypto.decrypt(ciphertext: ciphertext, key: key, nonce: nonce)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            self.data = try decoder.decode(VaultData.self, from: plaintext)
+            self.masterKey = key
+        } else if unlockedSessions[sessionID] == nil {
+            // Vault is loaded but this session is new — Touch ID for this session.
+            // Skip if a passphrase was supplied (recovery flow).
+            if passphrase == nil {
+                try await auth.authenticate(reason: "Unlock tsm vault")
+            }
         }
 
-        let envelope = try store.read()
-        guard let nonce = Data(base64Encoded: envelope.nonce),
-              let ciphertext = Data(base64Encoded: envelope.ciphertext) else {
-            throw CryptoError.decryptionFailed("Invalid base64 in vault envelope")
-        }
-        let plaintext = try crypto.decrypt(ciphertext: ciphertext, key: key, nonce: nonce)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        self.data = try decoder.decode(VaultData.self, from: plaintext)
-        self.masterKey = key
-        self.unlockTime = Date()
+        self.unlockedSessions[sessionID] = Date()
     }
 
-    func lock() {
+    func lock(sessionID: pid_t) {
+        unlockedSessions.removeValue(forKey: sessionID)
+        if unlockedSessions.isEmpty {
+            zeroState()
+        }
+    }
+
+    func lockAll() {
+        unlockedSessions.removeAll()
+        zeroState()
+    }
+
+    private func zeroState() {
         data = nil
-        masterKey = nil
-        unlockTime = nil
+        if var key = masterKey {
+            key.resetBytes(in: 0..<key.count)
+            masterKey = nil
+        }
+    }
+
+    // MARK: - Authorization helper
+
+    private func authorized(_ sessionID: pid_t) throws {
+        guard data != nil else { throw VaultError.locked }
+        guard let unlocked = unlockedSessions[sessionID] else { throw VaultError.locked }
+        let ttlSeconds = data?.config.ttlSeconds ?? 1800
+        let elapsed = Date().timeIntervalSince(unlocked)
+        if elapsed >= Double(ttlSeconds) {
+            unlockedSessions.removeValue(forKey: sessionID)
+            if unlockedSessions.isEmpty { zeroState() }
+            throw VaultError.locked
+        }
     }
 
     // MARK: - CRUD
 
-    func list() throws -> [SecretMetadata] {
-        guard let data = data else { throw VaultError.locked }
-        return data.secrets.map { SecretMetadata(from: $0) }
+    func list(sessionID: pid_t) throws -> [SecretMetadata] {
+        try authorized(sessionID)
+        return data!.secrets.map { SecretMetadata(from: $0) }
     }
 
-    func get(name: String, clientId: String? = nil) async throws -> Secret {
-        guard let data = data else { throw VaultError.locked }
-        guard let secret = data.secrets.first(where: {
+    func get(name: String, sessionID: pid_t, clientId: String? = nil) async throws -> Secret {
+        try authorized(sessionID)
+        guard let secret = data!.secrets.first(where: {
             $0.name.lowercased() == name.lowercased()
         }) else {
             try? accessLog.log(method: "vault.get", secret: name, clientId: clientId, result: "not_found")
@@ -174,8 +215,8 @@ actor Vault {
 
     func add(name: String, displayName: String = "", value: String, description: String,
              confirm: Bool = false, tags: [String] = [],
-             clientId: String? = nil) async throws {
-        guard data != nil else { throw VaultError.locked }
+             sessionID: pid_t, clientId: String? = nil) async throws {
+        try authorized(sessionID)
         try NameValidation.validate(name)
         try DisplayNameValidation.validate(displayName)
         guard !data!.secrets.contains(where: { $0.name.lowercased() == name.lowercased() }) else {
@@ -190,8 +231,8 @@ actor Vault {
         try? accessLog.log(method: "vault.add", secret: name, clientId: clientId, result: "ok")
     }
 
-    func remove(name: String, clientId: String? = nil) async throws {
-        guard data != nil else { throw VaultError.locked }
+    func remove(name: String, sessionID: pid_t, clientId: String? = nil) async throws {
+        try authorized(sessionID)
         guard let index = data!.secrets.firstIndex(where: {
             $0.name.lowercased() == name.lowercased()
         }) else {
@@ -204,8 +245,8 @@ actor Vault {
 
     func edit(name: String, displayName: String? = nil, value: String? = nil,
               description: String? = nil, confirm: Bool? = nil, tags: [String]? = nil,
-              clientId: String? = nil) async throws {
-        guard data != nil else { throw VaultError.locked }
+              sessionID: pid_t, clientId: String? = nil) async throws {
+        try authorized(sessionID)
         guard let index = data!.secrets.firstIndex(where: {
             $0.name.lowercased() == name.lowercased()
         }) else {
@@ -224,27 +265,48 @@ actor Vault {
         try? accessLog.log(method: "vault.edit", secret: name, clientId: clientId, result: "ok")
     }
 
-    func status() -> VaultStatus {
+    // MARK: - Config
+
+    func getConfig(sessionID: pid_t) throws -> VaultConfig {
+        try authorized(sessionID)
+        return data!.config
+    }
+
+    func setConfig(ttlSeconds: Int, sessionID: pid_t) async throws -> VaultConfig {
+        try authorized(sessionID)
+        guard ttlSeconds >= 1 else { throw VaultError.invalidName("ttl_seconds must be >= 1") }
+        data!.config.ttlSeconds = ttlSeconds
+        try persist()
+        return data!.config
+    }
+
+    // MARK: - Status
+
+    func status(sessionID: pid_t) -> VaultStatus {
         let ttl: Int?
-        if let unlockTime = unlockTime, let ttlSeconds = data?.config.ttlSeconds {
-            let elapsed = Date().timeIntervalSince(unlockTime)
+        if let unlocked = unlockedSessions[sessionID], let ttlSeconds = data?.config.ttlSeconds {
+            let elapsed = Date().timeIntervalSince(unlocked)
             let remaining = Double(ttlSeconds) - elapsed
             ttl = max(0, Int(remaining))
         } else {
             ttl = nil
         }
+        let isSessionLocked = (data == nil) || (unlockedSessions[sessionID] == nil)
         return VaultStatus(
-            locked: isLocked,
+            locked: isSessionLocked,
             ttlRemainingSeconds: ttl,
             secretCount: data?.secrets.count ?? 0
         )
     }
 
     func checkTTL() {
-        guard let unlockTime = unlockTime, let ttlSeconds = data?.config.ttlSeconds else { return }
-        let elapsed = Date().timeIntervalSince(unlockTime)
-        if elapsed >= Double(ttlSeconds) {
-            lock()
+        guard let ttlSeconds = data?.config.ttlSeconds else { return }
+        let cutoff = Date().addingTimeInterval(-Double(ttlSeconds))
+        for (sid, unlocked) in unlockedSessions where unlocked <= cutoff {
+            unlockedSessions.removeValue(forKey: sid)
+        }
+        if unlockedSessions.isEmpty && data != nil {
+            zeroState()
         }
     }
 
@@ -259,10 +321,18 @@ actor Vault {
     func reset(clientId: String? = nil) async throws {
         try await auth.authenticate(reason: "Reset tsm vault — this destroys all secrets")
         try? accessLog.log(method: "vault.reset", secret: nil, clientId: clientId, result: "ok")
-        lock()
+        lockAll()
         try? store.delete()
         try? keychain.deleteMasterKey()
     }
+
+    // MARK: - Test helper (DEBUG-only)
+
+    #if DEBUG
+    func _testForceUnlockTime(sessionID: pid_t, to date: Date) {
+        unlockedSessions[sessionID] = date
+    }
+    #endif
 
     // MARK: - Private
 
