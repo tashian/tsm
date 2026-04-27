@@ -34,10 +34,6 @@ What `tsm` defends against:
 - **Audit log.** Every access is logged with timestamp, secret id, and client id. `tsm log` to view.
 - **Open source and small.** Auditable Swift daemon (~14 files), Go CLI, JSON-RPC over a Unix socket. No magic.
 
-## TODO
-
-`tsmd` daemon does not yet verify the connecting binary's code signature. A malicious tool inside your session that knows the JSON-RPC protocol can speak it directly. Code-signing peer verification is planned.
-
 ## Installation
 
 Install with bun, npm, or pnpm. Either pulls a prebuilt, sigstore-signed binary (macOS arm64 only).
