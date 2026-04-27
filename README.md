@@ -13,7 +13,7 @@ Touch ID unlocks the vault for 30 minutes,
 with vault access isolated to a single shell or agent session.
 
 And it's super lightweight, open source, and easy to verify.  
-Bitwarden is 1.8 million lines of code, `tsm` is 6,000.
+Bitwarden is 1.8 million lines of code, `tsm` is 3,000.
 
 Unencrypted secrets are stored in memory only,
 and auto-locks on screen lock or system sleep.
