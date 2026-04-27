@@ -1,6 +1,6 @@
 # Tiny Secrets Manager
 
-`tsm` is a secrets manager for coding agents on macOS. Keep credentials in an encrypted file; unlock for 12 hours with Touch ID, use them across the day. Following the `ssh-agent` model, the `tsmd` daemon runs on-demand and stores secrets in memory only. When unlocked, it holds the decrypted master key in RAM. Individual secrets can be marked to require touch on each use.
+`tsm` is a secrets manager for coding agents on macOS. Keep credentials in an encrypted file; Touch ID unlocks the vault for 30 minutes per shell or agent session. Following the `ssh-agent` model, the `tsmd` daemon runs on-demand, stores secrets in memory only, and auto-locks on screen lock or system sleep. Individual secrets can be marked to require Touch ID on every access.
 
 ## The problem
 
@@ -11,14 +11,28 @@ Agents need credentials all the time — for calling `aws`, `gh`, `psql`, `gclou
 
 ## What you get
 
-- **One Touch ID per session.** Daemon-held TTL, not per-process auth. Default 12h, configurable.
+- **One Touch ID per shell or agent session.** Daemon-held TTL, not per-process auth. Default 30 min; tune with `tsm config set ttl 1h` (any Go duration). Each shell, terminal pane, or agent process tree is its own POSIX session and unlocks independently.
+- **Auto-locks on screen lock and sleep.** Even inside the TTL window. The master key is zeroed in RAM when the last session locks.
 - **No cloud, no account, no subscription.** One binary, one encrypted file, the system Keychain. No vendor.
 - **Per-secret confirm gate.** Mark high-value secrets `confirm: true` to force Touch ID on every access regardless of vault state.
-- **Safe output modes.** Default raw value for pipes, `<(tsm get …)` for process substitution (file-flag tools), `--to-file` for tools that demand a path. Refuses to write secrets to a TTY.
+- **Safe output modes.** Raw value to stdout for pipes, `<(tsm get …)` for process substitution, `--to-file` for tools that demand a path. Refuses to write secrets to a TTY.
 - **No secrets in `ps` or shell history.** Values are always read from stdin, a file, or the TUI — never a flag.
 - **First-class agent integration.** `tsm run --env VAR=secret -- cmd` injects credentials into a subprocess for one invocation; `tsm get --format env|aws-credential-process|pgpass` produces tool-specific wire formats. A bundled Claude Code plugin (`plugin/`) ships a permission allowlist and an opinionated skill that teaches the agent which pattern to reach for.
 - **Audit log.** Every access is logged with timestamp, secret id, and client id. `tsm log` to view.
-- **Open source and small.** Auditable Swift daemon (~13 files), Go CLI, JSON-RPC over a Unix socket. No magic.
+- **Open source and small.** Auditable Swift daemon (~14 files), Go CLI, JSON-RPC over a Unix socket. No magic.
+
+## Threat model
+
+What `tsm` defends against:
+
+- **Same-user malware in a different session.** A LaunchAgent, browser-spawned helper, or process in a separate terminal pane that connects to the daemon socket while your main session is unlocked still has to Touch ID on its own — which prompts you visibly. Each session unlocks independently.
+- **Absent user.** Auto-lock on screen lock and system sleep zeros the key, even if the TTL hasn't yet elapsed.
+- **Secrets at rest.** Vault file is AES-GCM encrypted; the master key lives only in the macOS Keychain (Touch ID gated) and in daemon RAM while at least one session is unlocked.
+
+Known residual risk:
+
+- **Same-session attacker.** A process running inside the same shell or agent tree as your unlocked vault is trusted within the TTL — it can read secrets via the daemon socket without re-prompting. Mitigations available to the user: a shorter TTL, manual `tsm lock`, screen-lock when stepping away.
+- **Signed-impersonator within your session.** The daemon does not yet verify the connecting binary's code signature. A malicious tool inside your session that knows the JSON-RPC protocol can speak it directly. Code-signing peer verification is planned.
 
 ## Installation
 
@@ -59,7 +73,7 @@ The `tsm` CLI auto-spawns the daemon on first use, so no SessionStart hook is ne
 
 ```bash
 tsm init        # Generate master key, store in Keychain (Touch ID gates access)
-tsm unlock      # Authenticate; vault stays unlocked for the configured TTL (default 12h)
+tsm unlock      # Authenticate; vault stays unlocked for the configured TTL (default 30m)
 tsm status
 ```
 
@@ -149,7 +163,7 @@ tsm get gh-pat   --format "env GITHUB_TOKEN"     > /dev/shm/envfile
 ```bash
 # Daemon
 cd tsmd
-swift test                                    # ~83 tests
+swift test                                    # ~100 tests
 swift build -c release
 cp .build/release/tsmd ~/.local/bin/tsmd
 cd ..

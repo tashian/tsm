@@ -68,7 +68,7 @@ Backward-compatible JSON. `Secret.displayName` has a custom decoder defaulting t
 
 ## Conventions
 
-- **TDD on the daemon side.** New tsmd features get tests in `Tests/tsmdTests/` first. CLI tests are lighter (smoke + table-driven for pure helpers).
+- **TDD on both sides.** New features get a failing test first — Swift tests in `Tests/tsmdTests/`, Go tests as `*_test.go` next to the command or helper. The daemon already has full coverage; many CLI commands in `cmd/` were written before this convention and lack tests — backfill tests when you touch one of them.
 - **No `--value` flag on `tsm add`.** Secrets must come from TUI, stdin, or `--from-file`. Flag values would leak into shell history and `/proc/<pid>/cmdline`.
 - **JSON-RPC keys are snake_case** (`display_name`, `ttl_remaining_seconds`). Swift uses `CodingKeys` to map; Go uses struct tags.
 - **One responsibility per file.** Each `cmd/*.go` and `tsmd/Sources/tsmd/*.swift` does one thing.
@@ -77,11 +77,14 @@ Backward-compatible JSON. `Secret.displayName` has a custom decoder defaulting t
 
 ## Plans (read before making non-trivial changes)
 
+All plans live in `docs/plans/` as `YYYY-MM-DD-<feature-name>.md`. Don't create plans elsewhere (no `docs/superpowers/`, no top-level `PLAN.md`). Design and implementation plans for the same feature share a date prefix and use `-design.md` / `-impl.md` (or `-plan.md`) suffixes.
+
 - `docs/plans/2026-03-08-tsm-design.md` — overall design spec, threat model, MCP interface.
 - `docs/plans/2026-03-21-tsmd-implementation.md` — daemon plan; **Addendum** at the bottom covers the `display_name` field.
 - `docs/plans/2026-03-22-tsm-cli-implementation.md` — CLI plan; **Addendum** covers display-name UX, kebab-case helper, and huh validation. Also has a "Known Gaps & Daemon Dependencies" section worth scanning.
 - `docs/plans/2026-04-25-tsm-agent-integration-design.md` — Plan 3 design (agent integration via `tsm run`, `tsm get --format`, and the Claude Code plugin). Drops the previously-planned `tsm mcp` and `tsm schema` in favor of the existing CLI surface.
 - `docs/plans/2026-04-25-tsm-agent-integration-impl.md` — Plan 3 implementation tasks.
+- `docs/plans/2026-04-26-vault-hardening-design.md` / `-plan.md` — TTL semantics and per-session unlock hardening.
 
 ## Quick gotchas
 
