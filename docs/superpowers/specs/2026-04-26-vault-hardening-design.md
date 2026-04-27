@@ -6,7 +6,7 @@
 
 Three changes that together harden tsm against realistic same-user threats while preserving the core promise: *inside a single shell or agent session, the vault remains open for the TTL with no extra Touch ID*.
 
-1. **Shorten the default TTL** (12 h → 10 min). The current 12 h window is generous; reducing it cuts the steady-state exposure if any of the other defenses fail.
+1. **Shorten the default TTL** (12 h → 30 min) and consolidate it as a single source of truth in the daemon vault config; expose a duration-friendly CLI surface. The current 12 h window is generous; reducing it cuts the steady-state exposure if any of the other defenses fail. While we're touching this code, fix a pre-existing bug: today the CLI has its own `ttl_hours` config field that no code reads — it never reaches the daemon.
 2. **Bind unlock state to the calling POSIX session.** Today the daemon has one global "unlocked" state; any same-user process can read secrets during the TTL window. After this change, each session unlocks independently — a malicious LaunchAgent, browser-helper, or separate-terminal process must Touch ID on its own (which is visible to the user) before it can read.
 3. **Auto-lock on screen-lock and sleep.** Catches the "user walked away" case where TTL hasn't yet elapsed.
 
@@ -22,7 +22,16 @@ A fourth idea — verifying the connecting binary's code signature so non-`tsm` 
 - *Same-session attacker.* A process inside the same POSIX session as the user's unlocked agent (e.g. a malicious tool running inside the same shell) is still trusted within the TTL. Mitigations available to the user: shorter TTL, manual `tsm lock`, screen lock. Closing this would require per-PID unlock binding, which breaks the "agent invokes tsm many times" promise.
 - *Hostile signed-impersonator.* A non-`tsm` binary that knows the JSON-RPC protocol can connect to the socket and call methods directly. Mitigated only by per-session unlock (it still has to Touch ID to read anything if it's in a different session). Code-signing peer check would close the same-session variant; deferred.
 
-## Change 1 — TTL default 10 minutes, units in seconds
+## Change 1 — TTL default 30 minutes, single source of truth, duration-friendly CLI
+
+### One source of truth: the daemon vault config
+
+Today `ttl_hours` exists in two places:
+
+- `tsmd/Sources/tsmd/Models.swift` `Config.ttlHours = 12` — the value the daemon actually uses, embedded in the encrypted vault.
+- `cmd/config.go` `tsmConfig.TTLHours = 12` — a value written to a local CLI config file by `tsm config set ttl_hours`. **Nothing in the CLI ever reads it back to drive behavior.** It never reaches the daemon. This is a pre-existing bug; the CLAUDE.md note about "changes propagate after the next lock/unlock cycle" describes the intended wiring, not the current behavior.
+
+The fix: the daemon vault's `config` is the single source of truth for TTL. The CLI exposes TTL via JSON-RPC, with no local default and no local copy. The CLI's local config file keeps only client-side concerns (update-check settings).
 
 ### Vault config schema
 
@@ -30,34 +39,44 @@ A fourth idea — verifying the connecting binary's code signature so non-`tsm` 
 
 ```swift
 struct Config: Codable {
-    var ttlSeconds: Int = 600
+    var ttlSeconds: Int = 1800
     enum CodingKeys: String, CodingKey {
         case ttlSeconds = "ttl_seconds"
     }
 }
 ```
 
-`ttlHours` field and its `CodingKey` are deleted entirely. Vaults written before this change have `ttl_seconds` absent → `Codable` default of 600 applies. Old `ttl_hours` field in the JSON is silently ignored. The project is pre-release; this break is acceptable and is **not** documented as a deprecation.
+`ttlHours` field and its `CodingKey` are deleted entirely. Vaults written before this change have `ttl_seconds` absent → `Codable` default of 1800 applies. Old `ttl_hours` field in the JSON is silently ignored. The project is pre-release; this break is acceptable and is **not** documented as a deprecation.
 
-### CLI mirror
+### New JSON-RPC methods
 
-`cmd/config.go`:
+`vault.config.get`
+- Params: none.
+- Result: `{"ttl_seconds": <int>}`.
+- Authorization: requires the calling session to be unlocked. (Reading the TTL value is low-sensitivity, but gating it keeps the surface uniform; revisit if a use case appears.)
 
-```go
-type Config struct {
-    TTLSeconds int `json:"ttl_seconds"`
-}
+`vault.config.set`
+- Params: `{"ttl_seconds": <positive int>}`. Other config keys can be added later in the same shape.
+- Result: the updated config (`{"ttl_seconds": <int>}`).
+- Authorization: requires the calling session to be unlocked. The new value is persisted by re-encrypting and writing the vault envelope (the same `persist()` path used by other writes).
+- Validation: `ttl_seconds >= 1`. No upper bound enforced by the daemon; the CLI may set its own UX-friendly cap.
 
-var defaultConfig = Config{
-    TTLSeconds: 600,
-}
-```
+### CLI surface
 
-`tsm config get ttl_seconds` and `tsm config set ttl_seconds N` are the only TTL commands. `ttl_hours` is removed from the CLI surface entirely; the case is dropped from the get/set switches.
+`cmd/config.go` becomes a thin wrapper over RPC for the TTL key, plus a local file for client-side keys:
+
+- `tsm config set ttl <duration>` — parses `<duration>` with Go's `time.ParseDuration`, converts to seconds, calls `vault.config.set`. Examples: `30m`, `1h`, `90s`, `1h30m`. Rejects values < 1 s or non-integer-seconds (e.g. `500ms`) with a clear error.
+- `tsm config get ttl` — calls `vault.config.get`, prints the value as a Go duration via `time.Duration(seconds * time.Second).String()`. Output for 1800: `30m0s`.
+- `tsm config set update_check <bool>` and friends — read/write the local CLI config file as today.
+- `tsm config` (no args) — prints a combined view: a `vault` section populated via `vault.config.get` (errors gracefully if locked or daemon unavailable) and a `client` section from the local file.
+
+The CLI's local `tsmConfig` struct loses its `TTLHours` field. `defaultConfig` loses its `TTLHours` initializer.
+
+The CLI key `ttl_hours` is removed entirely. The new key is `ttl`. (Renaming `ttl_seconds` → `ttl` at the CLI surface is fine because the CLI accepts/displays durations, not raw seconds; the wire and storage names remain `ttl_seconds`.)
 
 ### TTL math
 
-`Vault.checkTTL()` and `Vault.status()` switch from `Double(ttlHours) * 3600` to `Double(ttlSeconds)`. Daemon TTL polling interval (currently 60 s in `Daemon.swift`) is reduced to **15 s** so a 600 s TTL still expires within ~2.5% of its target.
+`Vault.checkTTL()` and `Vault.status()` switch from `Double(ttlHours) * 3600` to `Double(ttlSeconds)`. Daemon TTL polling interval (currently 60 s in `Daemon.swift`) is reduced to **15 s** so the auto-lock check still fires close to the configured TTL even when users set short values like 60 s.
 
 ## Change 2 — Per-session unlock state
 
@@ -111,7 +130,7 @@ private func authorized(_ sid: sid_t) throws {
     guard data != nil else { throw VaultError.locked }
     guard let state = unlockedSessions[sid] else { throw VaultError.locked }
     let elapsed = Date().timeIntervalSince(state.unlockTime)
-    let ttlSeconds = data?.config.ttlSeconds ?? 600
+    let ttlSeconds = data?.config.ttlSeconds ?? 1800
     guard elapsed < Double(ttlSeconds) else {
         unlockedSessions.removeValue(forKey: sid)
         if unlockedSessions.isEmpty { lockAll() }
@@ -204,9 +223,9 @@ Nothing is required on wake. The next `tsm` call from any session is treated as 
 ## Migration
 
 - Vault file format envelope `version` is **not** bumped. The only change is the `Config` field rename (`ttl_hours` → `ttl_seconds`); the JSON decoder silently drops the unknown old field and uses the new default for the missing new field.
+- The CLI's local config file is rewritten without the `ttl_hours` key the next time `saveConfig` runs; users who previously set `ttl_hours` there were getting no benefit anyway (it never reached the daemon).
 - No daemon-state migration is needed (state lives in memory; restart re-locks).
-- No CLI migration is needed beyond the source change.
-- Pre-release; users with custom `ttl_hours` settings will pick up the new 10-min default and can re-set with `tsm config set ttl_seconds N`.
+- Pre-release; users with custom `ttl_hours` settings will pick up the new 30-min default and can re-set with `tsm config set ttl 30m` (or whatever duration).
 
 ## Testing
 
@@ -216,7 +235,9 @@ Nothing is required on wake. The next `tsm` call from any session is treated as 
 - **Last-session lock.** Last unlocked session expires (or `lock(sid:)` is called) → master key is zeroed, `data == nil`, `unlockedSessions` is empty.
 - **Authorization gate.** Calling `get(sid:)` for a sid not in the map returns `VaultError.locked` even when another sid *is* unlocked.
 - **TTL math.** Boundary conditions at `ttlSeconds - 1`, `ttlSeconds`, `ttlSeconds + 1`.
-- **Stale-vault config.** A `Config` decoded from JSON that contains only the old `ttl_hours` key resolves to `ttlSeconds == 600` (the default).
+- **Stale-vault config.** A `Config` decoded from JSON that contains only the old `ttl_hours` key resolves to `ttlSeconds == 1800` (the default).
+- **`vault.config.set` round-trip.** Set `ttl_seconds` to a non-default value, restart the test vault, confirm the new value is persisted and used by `checkTTL`.
+- **`vault.config.set` while locked.** Returns `VaultError.locked` for the calling session.
 
 ### tsmd integration
 
@@ -226,8 +247,12 @@ Nothing is required on wake. The next `tsm` call from any session is treated as 
 
 ### CLI smoke
 
-- `tsm config set ttl_seconds 1200` followed by `tsm config get ttl_seconds` round-trips.
-- `tsm config get ttl_hours` errors (key removed).
+- `tsm config set ttl 20m` followed by `tsm config get ttl` prints `20m0s`.
+- `tsm config set ttl 90s` accepts the value (`90s` → 90).
+- `tsm config set ttl 500ms` errors (sub-second not allowed).
+- `tsm config set ttl 0` errors (positive required).
+- `tsm config set ttl_hours 4` errors (key removed).
+- `tsm config get ttl` while the daemon is locked returns the same locked-vault error as other unlock-required commands.
 
 ## Out of scope (future work)
 
