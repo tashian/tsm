@@ -35,7 +35,7 @@ final class ModelsTests: XCTestCase {
                 Secret(name: "k", value: "v", description: "d",
                        confirm: true, tags: [], created: Date(timeIntervalSince1970: 0))
             ],
-            config: VaultConfig(ttlHours: 8)
+            config: VaultConfig(ttlSeconds: 28800)
         )
         let data = try encoder.encode(vault)
         let decoded = try decoder.decode(VaultData.self, from: data)
@@ -66,11 +66,6 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(meta.description, "desc")
         XCTAssertTrue(meta.confirm)
         XCTAssertEqual(meta.tags, ["a", "b"])
-    }
-
-    func testVaultConfigDefaults() {
-        let config = VaultConfig()
-        XCTAssertEqual(config.ttlHours, 12)
     }
 
     func testVaultStatusCodingKeys() throws {
@@ -120,5 +115,26 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(meta.displayName, "Kebab Display")
         let data = try encoder.encode(meta)
         XCTAssertTrue(String(data: data, encoding: .utf8)!.contains("\"display_name\":\"Kebab Display\""))
+    }
+}
+
+final class VaultConfigDecodingTests: XCTestCase {
+    func testDecodesTTLSeconds() throws {
+        let json = #"{"ttl_seconds": 1200}"#.data(using: .utf8)!
+        let cfg = try JSONDecoder().decode(VaultConfig.self, from: json)
+        XCTAssertEqual(cfg.ttlSeconds, 1200)
+    }
+
+    func testDefaultIs1800Seconds() {
+        let cfg = VaultConfig()
+        XCTAssertEqual(cfg.ttlSeconds, 1800)
+    }
+
+    func testIgnoresLegacyTTLHoursField() throws {
+        // Old vaults wrote ttl_hours; new code should silently drop it
+        // and use the default rather than crashing.
+        let json = #"{"ttl_hours": 12}"#.data(using: .utf8)!
+        let cfg = try JSONDecoder().decode(VaultConfig.self, from: json)
+        XCTAssertEqual(cfg.ttlSeconds, 1800)
     }
 }

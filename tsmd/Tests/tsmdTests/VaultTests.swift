@@ -249,7 +249,7 @@ final class VaultTests: XCTestCase {
         let status = await vault.status()
         XCTAssertFalse(status.locked)
         XCTAssertNotNil(status.ttlRemainingSeconds)
-        XCTAssertGreaterThan(status.ttlRemainingSeconds!, 43100)
+        XCTAssertGreaterThan(status.ttlRemainingSeconds!, 1700)
     }
 
     // MARK: - Reset

@@ -226,9 +226,9 @@ actor Vault {
 
     func status() -> VaultStatus {
         let ttl: Int?
-        if let unlockTime = unlockTime, let ttlHours = data?.config.ttlHours {
+        if let unlockTime = unlockTime, let ttlSeconds = data?.config.ttlSeconds {
             let elapsed = Date().timeIntervalSince(unlockTime)
-            let remaining = (Double(ttlHours) * 3600) - elapsed
+            let remaining = Double(ttlSeconds) - elapsed
             ttl = max(0, Int(remaining))
         } else {
             ttl = nil
@@ -241,9 +241,9 @@ actor Vault {
     }
 
     func checkTTL() {
-        guard let unlockTime = unlockTime, let ttlHours = data?.config.ttlHours else { return }
+        guard let unlockTime = unlockTime, let ttlSeconds = data?.config.ttlSeconds else { return }
         let elapsed = Date().timeIntervalSince(unlockTime)
-        if elapsed >= Double(ttlHours) * 3600 {
+        if elapsed >= Double(ttlSeconds) {
             lock()
         }
     }

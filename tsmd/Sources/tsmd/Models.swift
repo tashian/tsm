@@ -75,10 +75,21 @@ struct VaultData: Codable, Equatable, Sendable {
 }
 
 struct VaultConfig: Codable, Equatable, Sendable {
-    var ttlHours: Int = 12
+    var ttlSeconds: Int = 1800
 
     enum CodingKeys: String, CodingKey {
-        case ttlHours = "ttl_hours"
+        case ttlSeconds = "ttl_seconds"
+    }
+
+    // Custom decoder so old vaults written with ttl_hours (or no config key at
+    // all) decode cleanly, picking up the 1800-second default.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ttlSeconds = (try? c.decodeIfPresent(Int.self, forKey: .ttlSeconds)) ?? 1800
+    }
+
+    init(ttlSeconds: Int = 1800) {
+        self.ttlSeconds = ttlSeconds
     }
 }
 
