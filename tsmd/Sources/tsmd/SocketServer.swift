@@ -26,6 +26,10 @@ final class SocketServer: @unchecked Sendable {
         self.handler = handler
     }
 
+    // LOCAL_PEERPID gives the connecting peer's real PID; effective PID
+    // (LOCAL_PEEREPID) is not relevant here because setsid affects real and
+    // effective sessions equally and we want session-id resolution to follow
+    // the peer's actual process, not whatever setuid masquerade is in effect.
     private func peerSessionID(fd: Int32) -> pid_t? {
         var pid: pid_t = 0
         var len = socklen_t(MemoryLayout<pid_t>.size)

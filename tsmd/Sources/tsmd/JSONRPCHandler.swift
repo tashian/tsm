@@ -125,6 +125,9 @@ actor JSONRPCHandler {
             return .object(["ttl_seconds": .int(cfg.ttlSeconds)])
 
         case "vault.reset":
+            // sessionID intentionally omitted: reset is gated by Touch ID
+            // alone and must remain reachable while the vault is locked, so
+            // a user with a forgotten passphrase can recover.
             let clientId = req.stringParam("client_id")
             try await vault.reset(clientId: clientId)
             return .object(["ok": .bool(true)])
