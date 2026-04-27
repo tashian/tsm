@@ -1,6 +1,6 @@
 # Tiny Secrets Manager
 
-`tsm` is a simple secrets manager for coding agents on macOS.
+`tsm` is a tiny secrets manager for coding agents on macOS.
 
 Coding agents need credentials for networked CLI tools and API calls.
 Yet storing credentials unencrypted in `.env` and JSON files is insecure.
