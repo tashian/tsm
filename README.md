@@ -1,27 +1,21 @@
 # Tiny Secrets Manager
 
-`tsm` is a secrets manager for coding agents on macOS. Keep credentials in an encrypted file; Touch ID unlocks the vault for 30 minutes per shell or agent session. Following the `ssh-agent` model, the `tsmd` daemon runs on-demand, stores secrets in memory only, and auto-locks on screen lock or system sleep. Individual secrets can be marked to require Touch ID on every access.
+`tsm` is a secrets manager for coding agents on macOS.
+Keep credentials in an encrypted file; Touch ID unlocks the vault for 30 minutes,
+with access isolated to a single shell or agent session.
+
+Following the `ssh-agent` model, a `tsmd` daemon runs on-demand,
+stores secrets in memory only,
+and auto-locks on screen lock or system sleep.
+Individual secrets can be marked to require Touch ID on every access.
 
 ## The problem
 
-Agents need credentials all the time — for calling `aws`, `gh`, `psql`, `gcloud`, or simply `curl`ing API endpoints. Long-lived, static credentials sit in JSON files (insecurely on disk) or in a heavyweight secrets manager like 1Password.
-
-1Password isn't great for this. The 1Password CLI `op` re-prompts for Touch ID on every credential read — sometimes several times in a row during a single agent turn.
-
-
-## What you get
-
-- **One Touch ID per shell or agent session.** Daemon-held TTL, not per-process auth. Default 30 min; tune with `tsm config set ttl 1h` (any Go duration). Each shell, terminal pane, or agent process tree is its own POSIX session and unlocks independently.
-- **Auto-locks on screen lock and sleep.** Even inside the TTL window. The master key is zeroed in RAM when the last session locks.
-- **No cloud, no account, no subscription.** One binary, one encrypted file, the system Keychain. No vendor.
-- **Per-secret confirm gate.** Mark high-value secrets `confirm: true` to force Touch ID on every access regardless of vault state.
-- **Safe output modes.** Raw value to stdout for pipes, `<(tsm get …)` for process substitution, `--to-file` for tools that demand a path. Refuses to write secrets to a TTY.
-- **No secrets in `ps` or shell history.** Values are always read from stdin, a file, or the TUI — never a flag.
-- **First-class agent integration.** `tsm run --env VAR=secret -- cmd` injects credentials into a subprocess for one invocation; `tsm get --format env|aws-credential-process|pgpass` produces tool-specific wire formats. A bundled Claude Code plugin (`plugin/`) ships a permission allowlist and an opinionated skill that teaches the agent which pattern to reach for.
-- **Audit log.** Every access is logged with timestamp, secret id, and client id. `tsm log` to view.
-- **Open source and small.** Auditable Swift daemon (~14 files), Go CLI, JSON-RPC over a Unix socket. No magic.
-
-## Threat model
+Agents need credentials for networked CLI tools and API calls.
+Unencrypted credentials stored on disk are insecure.
+Yet heavyweight secrets managers like 1Password are architecturally mismatched for coding agents,
+resulting in re-prompts for Touch ID on every credential read,
+sometimes several times in a row during a single agent turn!
 
 What `tsm` defends against:
 
@@ -29,14 +23,24 @@ What `tsm` defends against:
 - **Absent user.** Auto-lock on screen lock and system sleep zeros the key, even if the TTL hasn't yet elapsed.
 - **Secrets at rest.** Vault file is AES-GCM encrypted; the master key lives only in the macOS Keychain (Touch ID gated) and in daemon RAM while at least one session is unlocked.
 
-Known residual risk:
+## What you get
 
-- **Same-session attacker.** A process running inside the same shell or agent tree as your unlocked vault is trusted within the TTL — it can read secrets via the daemon socket without re-prompting. Mitigations available to the user: a shorter TTL, manual `tsm lock`, screen-lock when stepping away.
-- **Signed-impersonator within your session.** The daemon does not yet verify the connecting binary's code signature. A malicious tool inside your session that knows the JSON-RPC protocol can speak it directly. Code-signing peer verification is planned.
+- **One Touch ID per shell or agent session.** You get a 30 min session unlock by default. Each shell, terminal pane, or agent process tree is its own POSIX session and unlocks independently.
+- **Auto-locks on screen lock and sleep.**
+- **Per-secret confirm gate.** Mark high-value secrets `confirm: true` to force Touch ID on every access regardless of vault state.
+- **Safe output modes.** Raw value to stdout for pipes, `<(tsm get …)` for process substitution, `--to-file` for tools that demand a path. Refuses to write secrets to a TTY.
+- **No secrets in `ps` or shell history.** Values are always read from stdin, a file, or the TUI — never a flag. See [How to Handle Secrets on the Command Line](https://smallstep.com/blog/command-line-secrets/).
+- **First-class agent integration.** `tsm run --env VAR=secret -- cmd` injects credentials into a subprocess for one invocation; `tsm get --format env|aws-credential-process|pgpass` produces tool-specific wire formats. A bundled Claude Code plugin (`plugin/`) ships a permission allowlist and an opinionated skill that teaches the agent which pattern to reach for.
+- **Audit log.** Every access is logged with timestamp, secret id, and client id. `tsm log` to view.
+- **Open source and small.** Auditable Swift daemon (~14 files), Go CLI, JSON-RPC over a Unix socket. No magic.
+
+## TODO
+
+`tsmd` daemon does not yet verify the connecting binary's code signature. A malicious tool inside your session that knows the JSON-RPC protocol can speak it directly. Code-signing peer verification is planned.
 
 ## Installation
 
-Install with bun, npm, or pnpm. Either pulls a prebuilt, sigstore-signed binary for your platform (currently macOS arm64 only).
+Install with bun, npm, or pnpm. Either pulls a prebuilt, sigstore-signed binary (macOS arm64 only).
 
 ```bash
 bun install -g @tashian/tsm
@@ -44,15 +48,11 @@ bun install -g @tashian/tsm
 # or: pnpm add -g @tashian/tsm
 ```
 
-The daemon is auto-spawned on first use — see [Quick start](#quick-start) below.
-
 Verify provenance:
 
 - The npm package page ([@tashian/tsm](https://www.npmjs.com/package/@tashian/tsm)) shows a sigstore-signed "Built and signed on GitHub Actions" badge linking to the source workflow run and the public transparency log entry.
 - For programmatic checks against the npm registry: `npm view @tashian/tsm dist.attestations`.
-- For the GitHub Release tarball: `gh attestation verify tsm_<version>_darwin_arm64.tar.gz --repo tashian/tsm`.
-
-Prefer to compile it yourself? See [Build from source](#build-from-source) at the bottom.
+- For the [GitHub Release](https://github.com/tashian/tsm/releases/latest) tarball: `gh attestation verify tsm_<version>_darwin_arm64.tar.gz --repo tashian/tsm`.
 
 ## For Claude Code
 
@@ -173,13 +173,6 @@ go test ./...
 go build -o ~/.local/bin/tsm .
 ```
 
-Make sure `~/.local/bin` is on your `$PATH`.
+(Make sure `~/.local/bin` is on your `$PATH`.)
 
 The daemon must be ad-hoc signed on Apple Silicon — `swift build` does this automatically. Don't strip the signature.
-
-To install the Claude Code plugin from your local clone instead of GitHub:
-
-```
-/plugin marketplace add /absolute/path/to/tsm
-/plugin install tsm@tsm
-```
