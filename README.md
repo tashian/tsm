@@ -5,7 +5,7 @@
 Coding agents need credentials for networked CLI tools and API calls.
 Yet storing credentials unencrypted in `.env` and JSON files is insecure.
 And heavyweight secrets managers like 1Password or Bitwarden are architecturally mismatched for coding agents,
-giving you Touch ID re-prompting on every credential read,
+requiring Touch ID on every credential read,
 sometimes several times in a row during a single agent turn.
 
 With `tsm`, credentials are stored in an encrypted vault file.
