@@ -32,17 +32,11 @@ bun install -g @tashian/tsm
 
 The daemon is auto-spawned on first use — see [Quick start](#quick-start) below.
 
-Verify provenance after install:
+Verify provenance:
 
-```bash
-npm audit signatures -g                 # sigstore signatures on the npm packages
-```
-
-Or, for the GitHub Release tarball:
-
-```bash
-gh attestation verify tsm_<version>_darwin_arm64.tar.gz --repo tashian/tsm
-```
+- The npm package page ([@tashian/tsm](https://www.npmjs.com/package/@tashian/tsm)) shows a sigstore-signed "Built and signed on GitHub Actions" badge linking to the source workflow run and the public transparency log entry.
+- For programmatic checks against the npm registry: `npm view @tashian/tsm dist.attestations`.
+- For the GitHub Release tarball: `gh attestation verify tsm_<version>_darwin_arm64.tar.gz --repo tashian/tsm`.
 
 Prefer to compile it yourself? See [Build from source](#build-from-source) at the bottom.
 
