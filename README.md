@@ -12,14 +12,14 @@ With `tsm`, credentials are stored in an encrypted vault file.
 Touch ID unlocks the vault for 30 minutes,
 with vault access isolated to a single shell or agent session.
 
-And it's super lightweight, open source, and easy to verify.  
+And it's super lightweight, open source, and easy to verify:  
 Bitwarden is 1.8 million lines of code, `tsm` is 3,000.
 
 Unencrypted secrets are stored in memory only,
 and auto-locks on screen lock or system sleep.
 
-Values are always read from stdin, a file, or the TUI.
-See [How to Handle Secrets on the Command Line](https://smallstep.com/blog/command-line-secrets/).
+In alignment with my article [How to Handle Secrets on the Command Line](https://smallstep.com/blog/command-line-secrets/),
+values are always read from stdin, a file, or the TUI.
 
 Sensitive secrets can be set to require Touch ID on every access.
 
