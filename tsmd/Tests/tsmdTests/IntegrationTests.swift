@@ -169,4 +169,68 @@ final class IntegrationTests: XCTestCase {
         ])
         XCTAssertEqual(resp.error?.code, RPCErrorCode.invalidParams)
     }
+
+    func testTwoSessionsUnlockIndependently() async throws {
+        let sidA: pid_t = 5001
+        let sidB: pid_t = 5002
+
+        let initResp = await rpc("vault.init", sessionID: sidA)
+        XCTAssertNil(initResp.error)
+
+        let statusA = await rpc("vault.status", sessionID: sidA)
+        if case .object(let obj) = statusA.result, case .bool(let locked)? = obj["locked"] {
+            XCTAssertFalse(locked, "sidA should be unlocked after init")
+        } else {
+            XCTFail("malformed status response")
+        }
+
+        let statusB = await rpc("vault.status", sessionID: sidB)
+        if case .object(let obj) = statusB.result, case .bool(let locked)? = obj["locked"] {
+            XCTAssertTrue(locked, "sidB should be locked")
+        } else {
+            XCTFail("malformed status response")
+        }
+
+        let getB = await rpc("vault.get", params: ["name": .string("nope")], sessionID: sidB)
+        XCTAssertNotNil(getB.error)
+        XCTAssertEqual(getB.error?.code, RPCErrorCode.vaultLocked)
+
+        let unlockB = await rpc("vault.unlock", sessionID: sidB)
+        XCTAssertNil(unlockB.error)
+
+        _ = await rpc("vault.lock", sessionID: sidA)
+        let statusBAfter = await rpc("vault.status", sessionID: sidB)
+        if case .object(let obj) = statusBAfter.result, case .bool(let locked)? = obj["locked"] {
+            XCTAssertFalse(locked, "sidB should still be unlocked")
+        }
+    }
+
+    func testConfigSetAndGetRoundTrip() async throws {
+        let sid: pid_t = 5003
+        _ = await rpc("vault.init", sessionID: sid)
+
+        let setResp = await rpc("vault.config.set",
+                                params: ["ttl_seconds": .int(7200)],
+                                sessionID: sid)
+        XCTAssertNil(setResp.error)
+
+        let getResp = await rpc("vault.config.get", sessionID: sid)
+        if case .object(let obj) = getResp.result, case .int(let ttl)? = obj["ttl_seconds"] {
+            XCTAssertEqual(ttl, 7200)
+        } else {
+            XCTFail("expected ttl_seconds in config.get response")
+        }
+    }
+
+    func testConfigSetWhileLockedFails() async throws {
+        let sid: pid_t = 5004
+        _ = await rpc("vault.init", sessionID: sid)
+        _ = await rpc("vault.lock", sessionID: sid)
+
+        let setResp = await rpc("vault.config.set",
+                                params: ["ttl_seconds": .int(7200)],
+                                sessionID: sid)
+        XCTAssertNotNil(setResp.error)
+        XCTAssertEqual(setResp.error?.code, RPCErrorCode.vaultLocked)
+    }
 }
