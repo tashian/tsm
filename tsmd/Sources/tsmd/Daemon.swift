@@ -37,9 +37,10 @@ final class Daemon: @unchecked Sendable {
         print(socketPath)
         fflush(stdout)
 
-        // TTL check every 60 seconds
+        // TTL check every 15 seconds — short enough that even a 60 s TTL
+        // expires close to its target while keeping idle CPU near zero.
         let timer = DispatchSource.makeTimerSource(queue: .global())
-        timer.schedule(deadline: .now() + 60, repeating: 60)
+        timer.schedule(deadline: .now() + 15, repeating: 15)
         timer.setEventHandler { [weak self] in
             guard let self = self else { return }
             Task { await self.vault.checkTTL() }
