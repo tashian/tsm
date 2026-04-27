@@ -11,6 +11,7 @@ enum VaultError: Error, Equatable {
     case authRequired
     case authFailed
     case invalidName(String)
+    case invalidConfig(String)   // NEW
 }
 
 // MARK: - Dependency protocols
@@ -86,11 +87,6 @@ actor Vault {
 
     var isLocked: Bool { data == nil }
 
-    // Convenience for legacy unlockTime compatibility (used internally only).
-    private var unlockTime: Date? {
-        unlockedSessions.values.max()
-    }
-
     // MARK: - Init
 
     func initialize(recoveryPassphrase: String?, sessionID: pid_t) async throws {
@@ -146,10 +142,17 @@ actor Vault {
             decoder.dateDecodingStrategy = .iso8601
             self.data = try decoder.decode(VaultData.self, from: plaintext)
             self.masterKey = key
-        } else if unlockedSessions[sessionID] == nil {
-            // Vault is loaded but this session is new — Touch ID for this session.
-            // Skip if a passphrase was supplied (recovery flow).
-            if passphrase == nil {
+        } else {
+            // Data is loaded. Decide whether this session needs to (re-)authenticate.
+            let needsAuth: Bool = {
+                guard let unlocked = unlockedSessions[sessionID] else { return true }
+                // Same session already in map — but check it hasn't silently expired.
+                let ttlSeconds = data?.config.ttlSeconds ?? 1800
+                return Date().timeIntervalSince(unlocked) >= Double(ttlSeconds)
+            }()
+            if needsAuth {
+                // Passphrase-based recovery only makes sense on cold load. With data
+                // already loaded, require Touch ID regardless of passphrase argument.
                 try await auth.authenticate(reason: "Unlock tsm vault")
             }
         }
@@ -171,8 +174,9 @@ actor Vault {
 
     private func zeroState() {
         data = nil
-        if var key = masterKey {
-            key.resetBytes(in: 0..<key.count)
+        if masterKey != nil {
+            let count = masterKey!.count
+            masterKey!.resetBytes(in: 0..<count)
             masterKey = nil
         }
     }
@@ -182,7 +186,7 @@ actor Vault {
     private func authorized(_ sessionID: pid_t) throws {
         guard data != nil else { throw VaultError.locked }
         guard let unlocked = unlockedSessions[sessionID] else { throw VaultError.locked }
-        let ttlSeconds = data?.config.ttlSeconds ?? 1800
+        let ttlSeconds = data!.config.ttlSeconds
         let elapsed = Date().timeIntervalSince(unlocked)
         if elapsed >= Double(ttlSeconds) {
             unlockedSessions.removeValue(forKey: sessionID)
@@ -274,7 +278,7 @@ actor Vault {
 
     func setConfig(ttlSeconds: Int, sessionID: pid_t) async throws -> VaultConfig {
         try authorized(sessionID)
-        guard ttlSeconds >= 1 else { throw VaultError.invalidName("ttl_seconds must be >= 1") }
+        guard ttlSeconds >= 1 else { throw VaultError.invalidConfig("ttl_seconds must be >= 1") }
         data!.config.ttlSeconds = ttlSeconds
         try persist()
         return data!.config
@@ -302,9 +306,7 @@ actor Vault {
     func checkTTL() {
         guard let ttlSeconds = data?.config.ttlSeconds else { return }
         let cutoff = Date().addingTimeInterval(-Double(ttlSeconds))
-        for (sid, unlocked) in unlockedSessions where unlocked <= cutoff {
-            unlockedSessions.removeValue(forKey: sid)
-        }
+        unlockedSessions = unlockedSessions.filter { $0.value > cutoff }
         if unlockedSessions.isEmpty && data != nil {
             zeroState()
         }

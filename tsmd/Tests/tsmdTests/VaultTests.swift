@@ -323,4 +323,34 @@ final class VaultTests: XCTestCase {
         await vault.checkTTL()
         XCTAssertTrue(await vault.status(sessionID: sidA).locked)
     }
+
+    func testSetConfigRejectsZeroTTL() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        do {
+            _ = try await vault.setConfig(ttlSeconds: 0, sessionID: sidA)
+            XCTFail("expected VaultError.invalidConfig")
+        } catch VaultError.invalidConfig {
+            // expected
+        }
+    }
+
+    func testSetConfigRejectsNegativeTTL() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        do {
+            _ = try await vault.setConfig(ttlSeconds: -1, sessionID: sidA)
+            XCTFail("expected VaultError.invalidConfig")
+        } catch VaultError.invalidConfig {
+            // expected
+        }
+    }
+
+    func testUnlockRequiresAuthForExpiredSameSession() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.setConfig(ttlSeconds: 1, sessionID: sidA)
+        // Make the session look 10 seconds old (well past 1-second TTL).
+        await vault._testForceUnlockTime(sessionID: sidA, to: Date(timeIntervalSinceNow: -10))
+        auth.authenticateCalled = false
+        try await vault.unlock(sessionID: sidA)
+        XCTAssertTrue(auth.authenticateCalled, "expired same-session unlock must require auth")
+    }
 }
