@@ -29,9 +29,7 @@ What `tsm` defends against:
 - **Absent user.** Auto-lock on screen lock and system sleep zeros the key, even if the TTL hasn't yet elapsed.
 - **Secrets at rest.** Vault file is AES-GCM encrypted; the master key lives only in the macOS Keychain (Touch ID gated) and in daemon RAM while at least one session is unlocked.
 
-What `tsm` is:
-
-A Go CLI, JSON-RPC over a Unix socket to the `tsmd` Swift daemon, which is started on demand.
+Behind the scenes, `tsm` is a Go CLI, it uses JSON-RPC over a Unix socket to the `tsmd` Swift daemon, which is started on demand.
 The model is similar to `ssh-agent`.
 
 ## Installation
