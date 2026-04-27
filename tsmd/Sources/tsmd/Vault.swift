@@ -287,15 +287,20 @@ actor Vault {
     // MARK: - Status
 
     func status(sessionID: pid_t) -> VaultStatus {
-        let ttl: Int?
+        // A session is fresh only if it's in the map AND within TTL. The
+        // 15s polling sweep means an expired entry can linger briefly; we
+        // treat it as locked here so status() doesn't disagree with the
+        // next CRUD call (which goes through authorized()).
+        var ttl: Int? = nil
+        var freshlyUnlocked = false
         if let unlocked = unlockedSessions[sessionID], let ttlSeconds = data?.config.ttlSeconds {
             let elapsed = Date().timeIntervalSince(unlocked)
-            let remaining = Double(ttlSeconds) - elapsed
-            ttl = max(0, Int(remaining))
-        } else {
-            ttl = nil
+            if elapsed < Double(ttlSeconds) {
+                ttl = max(0, Int(Double(ttlSeconds) - elapsed))
+                freshlyUnlocked = true
+            }
         }
-        let isSessionLocked = (data == nil) || (unlockedSessions[sessionID] == nil)
+        let isSessionLocked = (data == nil) || !freshlyUnlocked
         return VaultStatus(
             locked: isSessionLocked,
             ttlRemainingSeconds: ttl,

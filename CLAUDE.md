@@ -85,7 +85,8 @@ Backward-compatible JSON. `Secret.displayName` has a custom decoder defaulting t
 
 ## Quick gotchas
 
-- **Daemon TTL vs config TTL.** `tsm config set ttl_hours` writes a CLI-side config file; the daemon reads its TTL from the vault's embedded `config.ttl_hours` at unlock time. Changes propagate after the next lock/unlock cycle.
+- **TTL config lives only in the daemon vault.** `tsm config set ttl 30m` calls the `vault.config.set` RPC, which re-encrypts and persists the embedded `ttl_seconds`. There is no CLI-side TTL value. Changes apply on the next operation that consults TTL (effectively immediately). The CLI accepts and prints Go duration strings (`30m`, `1h30m`); the wire/storage key remains `ttl_seconds`.
+- **Vault is per-session unlocked.** The daemon tracks unlock state in a `[pid_t: Date]` map keyed by the connecting peer's POSIX session id (resolved via `LOCAL_PEERPID` + `getsid`). Each session unlocks independently; locking one session doesn't disturb others. The master key is zeroed when the last session is removed. Auto-lock fires on screen lock and system sleep via `SystemEvents`.
 - **`vault.unlock` with passphrase doesn't re-store the key.** Recovery on a new device decrypts but doesn't update the Keychain entry yet (see Plan 2 Known Gaps #1).
 - **No `tsm daemon stop` command.** The only graceful daemon stop today is SIGTERM. `tsm reset` destroys state; SIGTERM just stops the process.
 - **`tsm get` to a TTY is rejected.** Default output is the raw value with no framing; the command refuses to write secret values to a terminal — pipe, redirect, or use `--to-file`.
