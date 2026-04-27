@@ -61,11 +61,11 @@ final class SystemEvents: @unchecked Sendable {
         sleepNotifier = notifierLocal
 
         if let portRef = notifyPortRef {
-            CFRunLoopAddSource(
-                CFRunLoopGetCurrent(),
-                IONotificationPortGetRunLoopSource(portRef).takeUnretainedValue(),
-                .defaultMode
-            )
+            // Route IOKit notifications through GCD instead of a CFRunLoop.
+            // The daemon's main thread blocks on DispatchSemaphore.wait(), so
+            // there is no active runloop to attach to. This delivers the
+            // sleep callback on a global queue.
+            IONotificationPortSetDispatchQueue(portRef, DispatchQueue.global(qos: .userInitiated))
         }
     }
 
