@@ -85,7 +85,7 @@ struct VaultConfig: Codable, Equatable, Sendable {
     // all) decode cleanly, picking up the 1800-second default.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.ttlSeconds = (try? c.decodeIfPresent(Int.self, forKey: .ttlSeconds)) ?? 1800
+        self.ttlSeconds = try c.decodeIfPresent(Int.self, forKey: .ttlSeconds) ?? 1800
     }
 
     init(ttlSeconds: Int = 1800) {

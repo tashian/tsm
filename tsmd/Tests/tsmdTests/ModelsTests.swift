@@ -137,4 +137,9 @@ final class VaultConfigDecodingTests: XCTestCase {
         let cfg = try JSONDecoder().decode(VaultConfig.self, from: json)
         XCTAssertEqual(cfg.ttlSeconds, 1800)
     }
+
+    func testRejectsTypeMismatchOnTTLSeconds() {
+        let json = #"{"ttl_seconds": "not-an-int"}"#.data(using: .utf8)!
+        XCTAssertThrowsError(try JSONDecoder().decode(VaultConfig.self, from: json))
+    }
 }
