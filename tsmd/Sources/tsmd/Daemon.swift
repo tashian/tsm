@@ -5,6 +5,7 @@ final class Daemon: @unchecked Sendable {
     let vault: Vault
     let server: SocketServer
     private var ttlTimer: DispatchSourceTimer?
+    private var systemEvents: SystemEvents?
     private var shutdownObserver: NSObjectProtocol?
     private let shutdownSemaphore = DispatchSemaphore(value: 0)
 
@@ -46,6 +47,13 @@ final class Daemon: @unchecked Sendable {
         timer.resume()
         ttlTimer = timer
 
+        let events = SystemEvents { [weak self] in
+            guard let self = self else { return }
+            Task { await self.vault.lockAll() }
+        }
+        events.start()
+        systemEvents = events
+
         // Listen for shutdown notification (from daemon.shutdown RPC)
         shutdownObserver = NotificationCenter.default.addObserver(
             forName: .tsmdShutdown, object: nil, queue: nil
@@ -65,6 +73,8 @@ final class Daemon: @unchecked Sendable {
     }
 
     func shutdown() {
+        systemEvents?.stop()
+        systemEvents = nil
         ttlTimer?.cancel()
         server.stop()
         if let observer = shutdownObserver {
