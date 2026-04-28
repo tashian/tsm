@@ -1,21 +1,27 @@
 # Tiny Secrets Manager
 
-`tsm` is a secrets manager for coding agents on macOS.
-Keep credentials in an encrypted file; Touch ID unlocks the vault for 30 minutes,
-with access isolated to a single shell or agent session.
+`tsm` is a tiny secrets manager for coding agents on macOS.
 
-Following the `ssh-agent` model, a `tsmd` daemon runs on-demand,
-stores secrets in memory only,
+Coding agents need credentials for networked CLI tools and API calls.
+Yet storing credentials unencrypted in `.env` and JSON files is insecure.
+And heavyweight secrets managers like 1Password or Bitwarden are architecturally mismatched for coding agents,
+requiring Touch ID on every credential read,
+sometimes several times in a row during a single agent turn.
+
+With `tsm`, credentials are stored in an encrypted vault file.
+Touch ID unlocks the vault for 30 minutes,
+with vault access isolated to a single shell or agent session.
+
+And it's super lightweight, open source, and easy to verify:  
+Bitwarden is 1.8 million lines of code, `tsm` is 3,000.
+
+Unencrypted secrets are stored in memory only,
 and auto-locks on screen lock or system sleep.
-Individual secrets can be marked to require Touch ID on every access.
 
-## The problem
+In alignment with my article [How to Handle Secrets on the Command Line](https://smallstep.com/blog/command-line-secrets/),
+values are always read from stdin, a file, or the TUI.
 
-Agents need credentials for networked CLI tools and API calls.
-Unencrypted credentials stored on disk are insecure.
-Yet heavyweight secrets managers like 1Password are architecturally mismatched for coding agents,
-resulting in re-prompts for Touch ID on every credential read,
-sometimes several times in a row during a single agent turn!
+Sensitive secrets can be set to require Touch ID on every access.
 
 What `tsm` defends against:
 
@@ -23,16 +29,8 @@ What `tsm` defends against:
 - **Absent user.** Auto-lock on screen lock and system sleep zeros the key, even if the TTL hasn't yet elapsed.
 - **Secrets at rest.** Vault file is AES-GCM encrypted; the master key lives only in the macOS Keychain (Touch ID gated) and in daemon RAM while at least one session is unlocked.
 
-## What you get
-
-- **One Touch ID per shell or agent session.** You get a 30 min session unlock by default. Each shell, terminal pane, or agent process tree is its own POSIX session and unlocks independently.
-- **Auto-locks on screen lock and sleep.**
-- **Per-secret confirm gate.** Mark high-value secrets `confirm: true` to force Touch ID on every access regardless of vault state.
-- **Safe output modes.** Raw value to stdout for pipes, `<(tsm get …)` for process substitution, `--to-file` for tools that demand a path. Refuses to write secrets to a TTY.
-- **No secrets in `ps` or shell history.** Values are always read from stdin, a file, or the TUI — never a flag. See [How to Handle Secrets on the Command Line](https://smallstep.com/blog/command-line-secrets/).
-- **First-class agent integration.** `tsm run --env VAR=secret -- cmd` injects credentials into a subprocess for one invocation; `tsm get --format env|aws-credential-process|pgpass` produces tool-specific wire formats. A bundled Claude Code plugin (`plugin/`) ships a permission allowlist and an opinionated skill that teaches the agent which pattern to reach for.
-- **Audit log.** Every access is logged with timestamp, secret id, and client id. `tsm log` to view.
-- **Open source and small.** Auditable Swift daemon (~14 files), Go CLI, JSON-RPC over a Unix socket. No magic.
+Behind the scenes, `tsm` is a Go CLI, it uses JSON-RPC over a Unix socket to the `tsmd` Swift daemon, which is started on demand.
+The model is similar to `ssh-agent`.
 
 ## Installation
 
