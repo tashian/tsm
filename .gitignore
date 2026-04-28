@@ -2,6 +2,9 @@
 /tsm
 /tsmd
 
+# Plan files
+/docs/plans/
+
 # Git worktrees
 /.worktrees/
 
