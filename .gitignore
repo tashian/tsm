@@ -1,6 +1,8 @@
-# Binaries built at repo root
+# Binaries built at repo root (the !/tsmd/ negation keeps the Swift source
+# directory tracked — `/tsmd` alone would also match the directory).
 /tsm
 /tsmd
+!/tsmd/
 
 # Plan files
 /docs/plans/

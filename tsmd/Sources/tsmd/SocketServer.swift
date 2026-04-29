@@ -35,8 +35,7 @@ final class SocketServer: @unchecked Sendable {
         var len = socklen_t(MemoryLayout<pid_t>.size)
         let rc = getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &len)
         guard rc == 0, pid > 0 else { return nil }
-        let sid = getsid(pid)
-        return sid > 0 ? sid : nil
+        return PeerSession.resolveDurableSessionID(peerPID: pid)
     }
 
     func start() throws {
