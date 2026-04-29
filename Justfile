@@ -12,10 +12,12 @@ test-go:
 test-swift:
     cd tsmd && swift test
 
-# Build both binaries into ./dist/bin/
-build: clean
+# Build both binaries into ./dist/bin/. VERSION is stamped into
+# `tsm/cmd.Version` via ldflag and shown by `tsm version` / `tsm status`.
+# Defaults to "dev" for local builds; `package` propagates the real tag.
+build VERSION="dev": clean
     mkdir -p dist/bin
-    go build -trimpath -ldflags="-s -w" -o dist/bin/tsm .
+    go build -trimpath -ldflags="-s -w -X 'tsm/cmd.Version={{VERSION}}'" -o dist/bin/tsm .
     cd tsmd && swift build -c release
     cp tsmd/.build/release/tsmd dist/bin/tsmd
     chmod +x dist/bin/tsm dist/bin/tsmd
@@ -24,7 +26,7 @@ clean:
     rm -rf dist
 
 # Package binaries into a tarball + checksums (VERSION is bare, no leading "v")
-package VERSION: build
+package VERSION: (build "v" + VERSION)
     mkdir -p dist/release
     tar -C dist/bin -czf dist/release/tsm_{{VERSION}}_darwin_arm64.tar.gz tsm tsmd
     cd dist/release && shasum -a 256 *.tar.gz > checksums.txt
