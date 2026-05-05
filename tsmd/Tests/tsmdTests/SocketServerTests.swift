@@ -122,4 +122,25 @@ final class SocketServerTests: XCTestCase {
         let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
         XCTAssertEqual(response.error?.code, RPCErrorCode.parseError)
     }
+
+    func testDaemonShutdownPostsShutdownNotification() async throws {
+        let expectation = XCTestExpectation(description: "shutdown notification")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .tsmdShutdown, object: nil, queue: nil
+        ) { _ in expectation.fulfill() }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        let json = """
+        {"jsonrpc":"2.0","method":"daemon.shutdown","id":99}
+        """
+        let responseData = try sendRequest(json)
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+        XCTAssertNil(response.error)
+        guard case .object(let obj) = response.result else {
+            XCTFail("Expected object result"); return
+        }
+        XCTAssertEqual(obj["ok"], .bool(true))
+
+        await fulfillment(of: [expectation], timeout: 2.0)
+    }
 }
