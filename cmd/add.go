@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -14,6 +14,21 @@ import (
 	"golang.org/x/term"
 )
 
+// addOptions captures inputs for runAddWith. Extracted so tests can inject a
+// stdin reader and skip the cobra flag plumbing / TTY detection.
+type addOptions struct {
+	Name        string
+	DisplayName string
+	Description string
+	Confirm     bool
+	Tags        []string
+	FromFile    string
+	NoInput     bool
+	Stdin       io.Reader
+	StdinTTY    bool
+	Stdout      io.Writer
+}
+
 func newAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -24,8 +39,27 @@ Interactive:  tsm add
 Piped:        echo "secret_value" | tsm add --name foo --no-input
 From file:    tsm add --name foo --from-file /path/to/key`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			name, _ := cmd.Flags().GetString("name")
+			displayName, _ := cmd.Flags().GetString("display-name")
+			description, _ := cmd.Flags().GetString("description")
+			confirm, _ := cmd.Flags().GetBool("confirm")
+			tags, _ := cmd.Flags().GetStringSlice("tags")
+			fromFile, _ := cmd.Flags().GetString("from-file")
+			noInput, _ := cmd.Flags().GetBool("no-input")
+			opts := addOptions{
+				Name:        name,
+				DisplayName: displayName,
+				Description: description,
+				Confirm:     confirm,
+				Tags:        tags,
+				FromFile:    fromFile,
+				NoInput:     noInput,
+				Stdin:       os.Stdin,
+				StdinTTY:    term.IsTerminal(int(os.Stdin.Fd())),
+				Stdout:      os.Stdout,
+			}
 			return withUnlockedClient(func(c client.Caller) error {
-				return runAdd(cmd, c)
+				return runAddWith(c, opts)
 			})
 		},
 	}
@@ -39,14 +73,14 @@ From file:    tsm add --name foo --from-file /path/to/key`,
 	return cmd
 }
 
-func runAdd(cmd *cobra.Command, c client.Caller) error {
-	name, _ := cmd.Flags().GetString("name")
-	displayName, _ := cmd.Flags().GetString("display-name")
-	description, _ := cmd.Flags().GetString("description")
-	confirm, _ := cmd.Flags().GetBool("confirm")
-	tags, _ := cmd.Flags().GetStringSlice("tags")
-	fromFile, _ := cmd.Flags().GetString("from-file")
-	noInput, _ := cmd.Flags().GetBool("no-input")
+func runAddWith(c client.Caller, opts addOptions) error {
+	name := opts.Name
+	displayName := opts.DisplayName
+	description := opts.Description
+	confirm := opts.Confirm
+	tags := opts.Tags
+	fromFile := opts.FromFile
+	noInput := opts.NoInput
 
 	var value string
 
@@ -56,14 +90,12 @@ func runAdd(cmd *cobra.Command, c client.Caller) error {
 			return fmt.Errorf("read file: %w", err)
 		}
 		value = strings.TrimRight(string(data), "\n")
-	} else if noInput || !term.IsTerminal(int(os.Stdin.Fd())) {
-		scanner := bufio.NewScanner(os.Stdin)
-		if scanner.Scan() {
-			value = scanner.Text()
-		}
-		if err := scanner.Err(); err != nil {
+	} else if noInput || !opts.StdinTTY {
+		data, err := io.ReadAll(opts.Stdin)
+		if err != nil {
 			return fmt.Errorf("read stdin: %w", err)
 		}
+		value = strings.TrimRight(string(data), "\n")
 	} else {
 		form := huh.NewForm(
 			huh.NewGroup(
@@ -144,13 +176,17 @@ func runAdd(cmd *cobra.Command, c client.Caller) error {
 		return handleError(err)
 	}
 
+	out := opts.Stdout
+	if out == nil {
+		out = os.Stdout
+	}
 	if jsonOutput() {
-		return printJSON(map[string]bool{"ok": true})
+		return printJSONTo(out, map[string]bool{"ok": true})
 	}
 	if displayName != "" && displayName != name {
-		fmt.Printf("Secret '%s' added (id: %s).\n", displayName, name)
+		fmt.Fprintf(out, "Secret '%s' added (id: %s).\n", displayName, name)
 	} else {
-		fmt.Printf("Secret '%s' added.\n", name)
+		fmt.Fprintf(out, "Secret '%s' added.\n", name)
 	}
 	return nil
 }
