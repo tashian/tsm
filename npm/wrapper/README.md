@@ -17,7 +17,7 @@ pnpm add -g @tashian/tsm
 
 This package is a thin shim. The actual binaries are pulled in via `optionalDependencies` based on your platform — currently only `@tashian/tsm-darwin-arm64` (Apple Silicon Macs).
 
-On upgrade, the postinstall script SIGTERMs any running `tsmd` so the next `tsm` command picks up the new binary. The daemon is auto-respawned on demand, so you'll Touch ID re-unlock once after upgrading. If you install with `--ignore-scripts`, the old daemon keeps running until you `pkill tsmd` (or reboot) yourself.
+On upgrade, the next `tsm` invocation SIGTERMs any `tsmd` running from a different install location than the one this `tsm` is about to use, then the daemon respawns on demand — so you'll Touch ID re-unlock once. This runs in the wrapper itself rather than a `postinstall` script so it works under bun (which skips lifecycle scripts by default) and any other manager that does the same.
 
 ## Usage
 
