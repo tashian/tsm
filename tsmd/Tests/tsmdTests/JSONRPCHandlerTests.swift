@@ -5,6 +5,7 @@ final class JSONRPCHandlerTests: XCTestCase {
     var handler: JSONRPCHandler!
     var vault: Vault!
     var auth: MockAuth!
+    var idleTracker: IdleTracker!
 
     let sid: pid_t = 5000
 
@@ -17,7 +18,28 @@ final class JSONRPCHandlerTests: XCTestCase {
             store: MockVaultStore(),
             accessLog: MockAccessLog()
         )
-        handler = JSONRPCHandler(vault: vault)
+        idleTracker = IdleTracker(now: Date(timeIntervalSince1970: 1000))
+        handler = JSONRPCHandler(vault: vault, idleTracker: idleTracker)
+    }
+
+    // MARK: - Idle bump
+
+    func testHandleBumpsIdleTracker() async {
+        let beforeBump = await idleTracker.lastActivityAt
+        XCTAssertEqual(beforeBump, Date(timeIntervalSince1970: 1000))
+
+        _ = await handler.handle(makeRequest(method: "vault.status"), sessionID: sid)
+
+        let afterBump = await idleTracker.lastActivityAt
+        XCTAssertGreaterThan(afterBump, beforeBump,
+            "every RPC must bump lastActivityAt so the daemon's idle-quit timer doesn't fire under load")
+    }
+
+    func testHandleBumpsIdleTrackerEvenForUnknownMethods() async {
+        _ = await handler.handle(makeRequest(method: "no.such.method"), sessionID: sid)
+        let afterBump = await idleTracker.lastActivityAt
+        XCTAssertGreaterThan(afterBump, Date(timeIntervalSince1970: 1000),
+            "an unknown-method error response is still client activity")
     }
 
     private func makeRequest(method: String, params: [String: JSONValue]? = nil, id: Int = 1) -> JSONRPCRequest {

@@ -71,7 +71,7 @@ The workflow:
 6. Publishes `@tashian/tsm@<version>` second
 7. Both npm publishes carry provenance attestations linking back to this exact workflow run
 
-On every invocation, the `@tashian/tsm` wrapper (`shim.js`) SIGTERMs any `tsmd` running from a different install location than the one this `tsm` is about to use, so upgrades pick up the new daemon on the next command. Doing it in the shim instead of a `postinstall` script means it works under bun, which silently skips lifecycle scripts by default. No-op on non-darwin.
+After an upgrade, the running `tsmd` keeps serving the old code until it idle-quits (all sessions past TTL + 30 minutes without an RPC), at which point the next `tsm` command spawns a fresh daemon from the new binary. Users who want the upgrade applied immediately can `tsm daemon stop`.
 
 ## Local dry-run
 
