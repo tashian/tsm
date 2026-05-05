@@ -11,7 +11,11 @@ enum VaultError: Error, Equatable {
     case authRequired
     case authFailed
     case invalidName(String)
-    case invalidConfig(String)   // NEW
+    case invalidConfig(String)
+    /// The named secret exists but is project-scoped to roots that do not
+    /// contain the calling peer's cwd. Carries the secret name and the bound
+    /// roots so the CLI can render an actionable hint.
+    case secretOutOfScope(name: String, roots: [String])
 }
 
 // MARK: - Dependency protocols
@@ -60,6 +64,69 @@ enum DisplayNameValidation {
         for ch in s.unicodeScalars where ch.value < 0x20 || ch.value == 0x7F {
             throw VaultError.invalidName("Display name cannot contain control characters")
         }
+    }
+}
+
+// MARK: - Scope validation / matching
+
+enum ScopeValidation {
+    static let maxRoots = 16
+
+    /// Validate the scope+roots tuple supplied to vault.add. Returns the
+    /// normalized roots on success (trailing slash stripped, but no symlink
+    /// resolution — that happens client-side at add time).
+    static func validate(scope: String, roots: [String]) throws -> [String] {
+        switch scope {
+        case SecretScope.global:
+            guard roots.isEmpty else {
+                throw VaultError.invalidConfig("scope=global must have empty roots")
+            }
+            return []
+        case SecretScope.project:
+            guard !roots.isEmpty else {
+                throw VaultError.invalidConfig("scope=project requires at least one root")
+            }
+            guard roots.count <= maxRoots else {
+                throw VaultError.invalidConfig("scope=project supports at most \(maxRoots) roots")
+            }
+            return try roots.map { try normalizeRoot($0) }
+        default:
+            throw VaultError.invalidConfig("unknown scope '\(scope)' (expected 'global' or 'project')")
+        }
+    }
+
+    /// Normalize a single root: must be absolute, no `..` components, no
+    /// trailing slash (except the root "/").
+    static func normalizeRoot(_ raw: String) throws -> String {
+        guard raw.hasPrefix("/") else {
+            throw VaultError.invalidConfig("root must be absolute: '\(raw)'")
+        }
+        let components = raw.split(separator: "/", omittingEmptySubsequences: false)
+        for comp in components where comp == ".." || comp == "." {
+            throw VaultError.invalidConfig("root must be normalized (no '.' or '..' components): '\(raw)'")
+        }
+        // Strip trailing slash unless the path *is* "/".
+        if raw == "/" { return "/" }
+        if raw.hasSuffix("/") { return String(raw.dropLast()) }
+        return raw
+    }
+}
+
+enum ScopeMatcher {
+    /// True when `cwd` is inside `root` (or equal to it). Both inputs assumed
+    /// to be normalized absolute paths. The boundary check guards against
+    /// `/foo` matching `/foobar`.
+    static func cwdMatchesRoot(cwd: String, root: String) -> Bool {
+        if cwd == root { return true }
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        return cwd.hasPrefix(prefix)
+    }
+
+    /// True when `cwd` is in any of the secret's roots.
+    static func inScope(secret: Secret, cwd: String?) -> Bool {
+        if secret.scope == SecretScope.global { return true }
+        guard let cwd = cwd else { return false }
+        return secret.roots.contains(where: { cwdMatchesRoot(cwd: cwd, root: $0) })
     }
 }
 
@@ -197,18 +264,34 @@ actor Vault {
 
     // MARK: - CRUD
 
-    func list(sessionID: pid_t) throws -> [SecretMetadata] {
+    /// List secrets visible to the calling peer.
+    /// - When `includeAll` is true, returns every secret regardless of scope.
+    ///   The CLI uses this for `tsm list --all`.
+    /// - Otherwise, returns global secrets plus project-scoped secrets whose
+    ///   roots include `peerCwd`. Project secrets bound elsewhere are filtered
+    ///   out so an agent in /Users/carl/code/A doesn't even see the names of
+    ///   secrets bound to /Users/carl/code/B.
+    func list(sessionID: pid_t, peerCwd: String? = nil, includeAll: Bool = false) throws -> [SecretMetadata] {
         try authorized(sessionID)
-        return data!.secrets.map { SecretMetadata(from: $0) }
+        let secrets = data!.secrets.filter { secret in
+            if includeAll { return true }
+            return ScopeMatcher.inScope(secret: secret, cwd: peerCwd)
+        }
+        return secrets.map { SecretMetadata(from: $0) }
     }
 
-    func get(name: String, sessionID: pid_t, clientId: String? = nil) async throws -> Secret {
+    func get(name: String, sessionID: pid_t, peerCwd: String? = nil,
+             clientId: String? = nil) async throws -> Secret {
         try authorized(sessionID)
         guard let secret = data!.secrets.first(where: {
             $0.name.lowercased() == name.lowercased()
         }) else {
             try? accessLog.log(method: "vault.get", secret: name, clientId: clientId, result: "not_found")
             throw VaultError.secretNotFound(name)
+        }
+        if !ScopeMatcher.inScope(secret: secret, cwd: peerCwd) {
+            try? accessLog.log(method: "vault.get", secret: name, clientId: clientId, result: "out_of_scope")
+            throw VaultError.secretOutOfScope(name: secret.name, roots: secret.roots)
         }
         if secret.confirm {
             try await auth.authenticate(reason: "Access secret '\(name)'")
@@ -219,16 +302,19 @@ actor Vault {
 
     func add(name: String, displayName: String = "", value: String, description: String,
              confirm: Bool = false, tags: [String] = [],
+             scope: String = SecretScope.global, roots: [String] = [],
              sessionID: pid_t, clientId: String? = nil) async throws {
         try authorized(sessionID)
         try NameValidation.validate(name)
         try DisplayNameValidation.validate(displayName)
+        let normalizedRoots = try ScopeValidation.validate(scope: scope, roots: roots)
         guard !data!.secrets.contains(where: { $0.name.lowercased() == name.lowercased() }) else {
             throw VaultError.secretAlreadyExists(name)
         }
         let secret = Secret(
             name: name, displayName: displayName, value: value, description: description,
-            confirm: confirm, tags: tags, created: Date()
+            confirm: confirm, tags: tags, created: Date(),
+            scope: scope, roots: normalizedRoots
         )
         data!.secrets.append(secret)
         try persist()
