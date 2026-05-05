@@ -18,6 +18,22 @@ tsm list --json
 
 If `tsm list` shows the credential, use it via one of the patterns below. Only ask the user if no matching secret exists.
 
+## 1a. Project-scoped secrets
+
+Some secrets are bound to a project directory. They appear in `tsm list` only when the cwd is inside the project's bound root, and `tsm get` returns `secret_out_of_scope` (RPC error code -32010) from anywhere else.
+
+- **Default `tsm list --json` is already cwd-filtered.** Trust it. Use `tsm list --all --json` only when explicitly asked to enumerate everything; that result still excludes secret values.
+- A project-scoped secret carries `"scope": "project"` and `"roots": ["/abs/path", ...]` in `tsm list` output.
+- When `tsm get foo` fails with `secret_out_of_scope`, do **not** suggest `cd`-ing elsewhere to fetch it — explain to the user that the secret is bound to a different project, and let them decide whether to re-scope it. Offer to use `tsm list --all` to find out where it lives.
+- Saving a project-bound secret on the user's behalf: the user must be `cd`'d into the project root, then run
+
+  ```bash
+  pbpaste | tsm add --no-input --here --name <kebab-id> --display-name "<...>"
+  ```
+
+  Use `--project /abs/path` (repeatable) instead of `--here` if the user wants to bind to a directory other than their cwd.
+- Project scoping is a **UX boundary, not a security boundary.** Within the user's account, any process can `chdir(...)` before talking to tsm and the daemon will faithfully report the spoofed cwd. Don't rely on it for authorization — its value is preventing accidents and reducing blast radius from supply-chain compromise within a project.
+
 ## 2. Pattern by tool category
 
 Pick the pattern that matches the consuming tool. Never fall back to a less safe pattern just because it is shorter.

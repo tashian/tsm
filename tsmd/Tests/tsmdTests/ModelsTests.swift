@@ -105,6 +105,55 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(s.name, "old-secret")
     }
 
+    func testSecret_ScopeRoots_BackwardCompat() throws {
+        // Vault rows written before scope/roots existed must decode to the
+        // documented defaults: scope="global", roots=[]. The custom decoder
+        // owns that contract; no envelope-version bump is involved.
+        let oldJSON = #"""
+        {"name":"legacy","value":"v","description":"d","confirm":false,"tags":[],"created":"2025-01-01T00:00:00Z"}
+        """#.data(using: .utf8)!
+        let s = try decoder.decode(Secret.self, from: oldJSON)
+        XCTAssertEqual(s.scope, "global")
+        XCTAssertEqual(s.roots, [])
+    }
+
+    func testSecret_ScopeRoots_RoundTrip() throws {
+        let secret = Secret(
+            name: "scoped",
+            value: "v",
+            description: "d",
+            confirm: false,
+            tags: [],
+            created: Date(timeIntervalSince1970: 1_700_000_000),
+            updated: nil,
+            scope: SecretScope.project,
+            roots: ["/Users/carl/code/foo", "/Users/carl/code/bar"]
+        )
+        let data = try encoder.encode(secret)
+        let json = String(data: data, encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"scope\":\"project\""), json)
+        // JSONEncoder may escape '/' as '\/' depending on flags; check both.
+        XCTAssertTrue(json.contains("/Users/carl/code/foo") ||
+                      json.contains("\\/Users\\/carl\\/code\\/foo"), json)
+        let decoded = try decoder.decode(Secret.self, from: data)
+        XCTAssertEqual(decoded, secret)
+    }
+
+    func testSecretMetadata_CarriesScopeAndRoots() throws {
+        let secret = Secret(
+            name: "k", value: "v", description: "d",
+            confirm: false, tags: [], created: Date(),
+            scope: SecretScope.project, roots: ["/tmp/foo"]
+        )
+        let meta = SecretMetadata(from: secret)
+        XCTAssertEqual(meta.scope, "project")
+        XCTAssertEqual(meta.roots, ["/tmp/foo"])
+        let data = try encoder.encode(meta)
+        let json = String(data: data, encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"scope\":\"project\""), json)
+        XCTAssertTrue(json.contains("/tmp/foo") || json.contains("\\/tmp\\/foo"), json)
+    }
+
     func testSecretMetadata_CarriesDisplayName() throws {
         let secret = Secret(
             name: "k", displayName: "Kebab Display",

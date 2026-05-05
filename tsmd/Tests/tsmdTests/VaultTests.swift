@@ -349,6 +349,169 @@ final class VaultTests: XCTestCase {
         }
     }
 
+    // MARK: - Project scoping
+
+    func testAddProjectScopeRejectsEmptyRoots() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        do {
+            try await vault.add(name: "k", value: "v", description: "d",
+                                scope: "project", roots: [], sessionID: sidA)
+            XCTFail("expected invalidConfig")
+        } catch VaultError.invalidConfig {
+            // expected
+        }
+    }
+
+    func testAddRejectsUnknownScope() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        do {
+            try await vault.add(name: "k", value: "v", description: "d",
+                                scope: "bogus", roots: [], sessionID: sidA)
+            XCTFail("expected invalidConfig")
+        } catch VaultError.invalidConfig {
+            // expected
+        }
+    }
+
+    func testAddRejectsRelativeRoot() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        do {
+            try await vault.add(name: "k", value: "v", description: "d",
+                                scope: "project", roots: ["relative/path"], sessionID: sidA)
+            XCTFail("expected invalidConfig")
+        } catch VaultError.invalidConfig {
+            // expected
+        }
+    }
+
+    func testAddRejectsRootWithDotDot() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        do {
+            try await vault.add(name: "k", value: "v", description: "d",
+                                scope: "project", roots: ["/tmp/../etc"], sessionID: sidA)
+            XCTFail("expected invalidConfig")
+        } catch VaultError.invalidConfig {
+            // expected
+        }
+    }
+
+    func testAddRejectsTooManyRoots() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        let tooMany = (1...17).map { "/tmp/r\($0)" }
+        do {
+            try await vault.add(name: "k", value: "v", description: "d",
+                                scope: "project", roots: tooMany, sessionID: sidA)
+            XCTFail("expected invalidConfig")
+        } catch VaultError.invalidConfig {
+            // expected
+        }
+    }
+
+    func testAddProjectScopeStripsTrailingSlash() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.add(name: "k", value: "v", description: "d",
+                            scope: "project", roots: ["/tmp/foo/"], sessionID: sidA)
+        let secret = try await vault.get(name: "k", sessionID: sidA, peerCwd: "/tmp/foo")
+        XCTAssertEqual(secret.roots, ["/tmp/foo"])
+    }
+
+    func testGetProjectScopedSecretInRootSucceeds() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.add(name: "k", value: "v", description: "d",
+                            scope: "project", roots: ["/tmp/foo"], sessionID: sidA)
+        let secret = try await vault.get(name: "k", sessionID: sidA, peerCwd: "/tmp/foo")
+        XCTAssertEqual(secret.value, "v")
+    }
+
+    func testGetProjectScopedSecretInSubdirSucceeds() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.add(name: "k", value: "v", description: "d",
+                            scope: "project", roots: ["/tmp/foo"], sessionID: sidA)
+        let secret = try await vault.get(name: "k", sessionID: sidA, peerCwd: "/tmp/foo/sub/deeper")
+        XCTAssertEqual(secret.value, "v")
+    }
+
+    func testGetProjectScopedSecretFromSiblingFails() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.add(name: "k", value: "v", description: "d",
+                            scope: "project", roots: ["/tmp/foo"], sessionID: sidA)
+        do {
+            _ = try await vault.get(name: "k", sessionID: sidA, peerCwd: "/tmp/foobar")
+            XCTFail("expected secretOutOfScope")
+        } catch VaultError.secretOutOfScope(let name, let roots) {
+            XCTAssertEqual(name, "k")
+            XCTAssertEqual(roots, ["/tmp/foo"])
+        }
+    }
+
+    func testGetProjectScopedSecretWithNilCwdFails() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.add(name: "k", value: "v", description: "d",
+                            scope: "project", roots: ["/tmp/foo"], sessionID: sidA)
+        do {
+            _ = try await vault.get(name: "k", sessionID: sidA, peerCwd: nil)
+            XCTFail("expected secretOutOfScope when cwd is unknown")
+        } catch VaultError.secretOutOfScope {
+            // expected
+        }
+    }
+
+    func testGlobalSecretIgnoresPeerCwd() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.add(name: "k", value: "v", description: "d", sessionID: sidA)
+        // peerCwd is irrelevant — global secrets are reachable from anywhere.
+        let secret = try await vault.get(name: "k", sessionID: sidA, peerCwd: "/somewhere")
+        XCTAssertEqual(secret.value, "v")
+    }
+
+    func testListFiltersOutOfScopeProjectSecrets() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.add(name: "global-key", value: "v", description: "d", sessionID: sidA)
+        try await vault.add(name: "proj-a", value: "va", description: "d",
+                            scope: "project", roots: ["/tmp/A"], sessionID: sidA)
+        try await vault.add(name: "proj-b", value: "vb", description: "d",
+                            scope: "project", roots: ["/tmp/B"], sessionID: sidA)
+
+        let inA = try await vault.list(sessionID: sidA, peerCwd: "/tmp/A")
+        let names = inA.map { $0.name }.sorted()
+        XCTAssertEqual(names, ["global-key", "proj-a"])
+    }
+
+    func testListIncludeAllReturnsEverything() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.add(name: "global-key", value: "v", description: "d", sessionID: sidA)
+        try await vault.add(name: "proj-a", value: "va", description: "d",
+                            scope: "project", roots: ["/tmp/A"], sessionID: sidA)
+        try await vault.add(name: "proj-b", value: "vb", description: "d",
+                            scope: "project", roots: ["/tmp/B"], sessionID: sidA)
+
+        let all = try await vault.list(sessionID: sidA, peerCwd: "/tmp/A", includeAll: true)
+        XCTAssertEqual(all.count, 3)
+    }
+
+    func testListWithNilCwdReturnsOnlyGlobals() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.add(name: "global-key", value: "v", description: "d", sessionID: sidA)
+        try await vault.add(name: "proj-a", value: "va", description: "d",
+                            scope: "project", roots: ["/tmp/A"], sessionID: sidA)
+
+        let result = try await vault.list(sessionID: sidA, peerCwd: nil)
+        XCTAssertEqual(result.map { $0.name }, ["global-key"])
+    }
+
+    func testGetOutOfScopeSecretLogsOutOfScope() async throws {
+        try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
+        try await vault.add(name: "k", value: "v", description: "d",
+                            scope: "project", roots: ["/tmp/foo"], sessionID: sidA)
+        accessLog.entries.removeAll()
+        _ = try? await vault.get(name: "k", sessionID: sidA, peerCwd: "/tmp/elsewhere",
+                                 clientId: "test")
+        let last = accessLog.entries.last
+        XCTAssertEqual(last?.method, "vault.get")
+        XCTAssertEqual(last?.secret, "k")
+        XCTAssertEqual(last?.result, "out_of_scope")
+    }
+
     func testUnlockRequiresAuthForExpiredSameSession() async throws {
         try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
         _ = try await vault.setConfig(ttlSeconds: 1, sessionID: sidA)

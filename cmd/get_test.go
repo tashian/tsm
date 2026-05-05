@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"tsm/internal/client"
+	"tsm/internal/jsonrpc"
 )
 
 // mockCaller is a minimal client.Caller for testing get/run command logic.
@@ -179,6 +180,48 @@ func TestGet_FormatUnknownFormatter(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no-such-formatter") {
 		t.Fatalf("error should name the unknown formatter, got: %v", err)
+	}
+}
+
+func TestGet_OutOfScope_ReturnsHintWithBoundRoot(t *testing.T) {
+	rpcErr := &jsonrpc.RPCError{
+		Code:    jsonrpc.CodeSecretOutOfScope,
+		Message: "Secret 'api-key' is project-scoped to a different directory",
+		Data: map[string]any{
+			"name":  "api-key",
+			"roots": []any{"/Users/carl/code/foo"},
+		},
+	}
+	mock := &mockCaller{
+		onCall: func(method string, params map[string]any) (any, error) {
+			if method == "vault.unlock" {
+				return nil, nil
+			}
+			if method == "vault.get" {
+				return nil, rpcErr
+			}
+			return nil, nil
+		},
+	}
+	err := runGetWith(mock, "api-key", getOptions{
+		Stdout:    &bytes.Buffer{},
+		StdoutTTY: false,
+	})
+	if err == nil {
+		t.Fatal("expected hint error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "api-key") {
+		t.Fatalf("hint should name the secret, got: %v", msg)
+	}
+	if !strings.Contains(msg, "/Users/carl/code/foo") {
+		t.Fatalf("hint should mention the bound root, got: %v", msg)
+	}
+	if !strings.Contains(msg, "cd into that directory") {
+		t.Fatalf("hint should suggest cd, got: %v", msg)
+	}
+	if !strings.Contains(msg, "tsm list --all") {
+		t.Fatalf("hint should mention 'tsm list --all', got: %v", msg)
 	}
 }
 

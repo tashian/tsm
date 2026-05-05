@@ -7,9 +7,9 @@ actor JSONRPCHandler {
         self.vault = vault
     }
 
-    func handle(_ request: JSONRPCRequest, sessionID: pid_t) async -> JSONRPCResponse {
+    func handle(_ request: JSONRPCRequest, sessionID: pid_t, peerCwd: String? = nil) async -> JSONRPCResponse {
         do {
-            let result = try await dispatch(request, sessionID: sessionID)
+            let result = try await dispatch(request, sessionID: sessionID, peerCwd: peerCwd)
             return JSONRPCResponse(result: result, id: request.id)
         } catch let error as VaultError {
             return JSONRPCResponse(error: mapVaultError(error), id: request.id)
@@ -26,7 +26,7 @@ actor JSONRPCHandler {
         }
     }
 
-    private func dispatch(_ req: JSONRPCRequest, sessionID: pid_t) async throws -> JSONValue {
+    private func dispatch(_ req: JSONRPCRequest, sessionID: pid_t, peerCwd: String?) async throws -> JSONValue {
         switch req.method {
         case "vault.init":
             let passphrase = req.stringParam("recovery_passphrase")
@@ -52,7 +52,11 @@ actor JSONRPCHandler {
             return encodeToJSONValue(status)
 
         case "vault.list":
-            let secrets = try await vault.list(sessionID: sessionID)
+            // include_all bypasses the cwd filter and returns every secret —
+            // the CLI uses it for `tsm list --all`. Default is the safer
+            // cwd-filtered view.
+            let includeAll = req.param("include_all")?.boolValue ?? false
+            let secrets = try await vault.list(sessionID: sessionID, peerCwd: peerCwd, includeAll: includeAll)
             return encodeToJSONValue(secrets)
 
         case "vault.get":
@@ -60,7 +64,8 @@ actor JSONRPCHandler {
                 throw VaultError.invalidName("Missing 'name' parameter")
             }
             let clientId = req.stringParam("client_id")
-            let secret = try await vault.get(name: name, sessionID: sessionID, clientId: clientId)
+            let secret = try await vault.get(name: name, sessionID: sessionID,
+                                             peerCwd: peerCwd, clientId: clientId)
             return .object(["name": .string(secret.name), "value": .string(secret.value)])
 
         case "vault.add":
@@ -77,9 +82,17 @@ actor JSONRPCHandler {
                 }
                 return []
             }()
+            let scope = req.stringParam("scope") ?? SecretScope.global
+            let roots: [String] = {
+                if case .array(let arr) = req.param("roots") {
+                    return arr.compactMap { $0.stringValue }
+                }
+                return []
+            }()
             let clientId = req.stringParam("client_id")
             try await vault.add(name: name, displayName: displayName, value: value,
                                description: description, confirm: confirm, tags: tags,
+                               scope: scope, roots: roots,
                                sessionID: sessionID, clientId: clientId)
             return .object(["ok": .bool(true)])
 
@@ -187,6 +200,19 @@ actor JSONRPCHandler {
             return JSONRPCError(
                 code: RPCErrorCode.invalidParams,
                 message: msg
+            )
+        case .secretOutOfScope(let name, let roots):
+            // The CLI reads `name` and `roots` out of `data` to render the
+            // hint message. Keeping the data structured (not folded into the
+            // human-readable `message`) lets future tools localize or format
+            // it differently.
+            return JSONRPCError(
+                code: RPCErrorCode.secretOutOfScope,
+                message: "Secret '\(name)' is project-scoped to a different directory",
+                data: [
+                    "name": .string(name),
+                    "roots": .array(roots.map { .string($0) }),
+                ]
             )
         }
     }

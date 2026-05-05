@@ -179,6 +179,102 @@ final class JSONRPCHandlerTests: XCTestCase {
         XCTAssertNil(resp.error)
     }
 
+    // MARK: - Project scoping (peer cwd plumbed through dispatch)
+
+    func testAddProjectScopeAndGetInScope() async {
+        _ = await handler.handle(makeRequest(method: "vault.init"), sessionID: sid)
+        let addResp = await handler.handle(makeRequest(
+            method: "vault.add",
+            params: [
+                "name": .string("proj-key"),
+                "value": .string("v"),
+                "description": .string("d"),
+                "scope": .string("project"),
+                "roots": .array([.string("/tmp/foo")]),
+            ]
+        ), sessionID: sid)
+        XCTAssertNil(addResp.error, addResp.error?.message ?? "")
+
+        let getInScope = await handler.handle(makeRequest(
+            method: "vault.get",
+            params: ["name": .string("proj-key")]
+        ), sessionID: sid, peerCwd: "/tmp/foo/sub")
+        XCTAssertNil(getInScope.error)
+    }
+
+    func testGetProjectScopedSecretOutOfScopeReturnsErrorWithRootsData() async {
+        _ = await handler.handle(makeRequest(method: "vault.init"), sessionID: sid)
+        _ = await handler.handle(makeRequest(
+            method: "vault.add",
+            params: [
+                "name": .string("proj-key"),
+                "value": .string("v"),
+                "description": .string("d"),
+                "scope": .string("project"),
+                "roots": .array([.string("/tmp/foo")]),
+            ]
+        ), sessionID: sid)
+
+        let resp = await handler.handle(makeRequest(
+            method: "vault.get",
+            params: ["name": .string("proj-key")]
+        ), sessionID: sid, peerCwd: "/tmp/elsewhere")
+
+        XCTAssertEqual(resp.error?.code, RPCErrorCode.secretOutOfScope)
+        XCTAssertEqual(resp.error?.code, -32010, "the wire-format error code is part of the contract")
+        guard let data = resp.error?.data else { return XCTFail("expected data field") }
+        XCTAssertEqual(data["name"], .string("proj-key"))
+        XCTAssertEqual(data["roots"], .array([.string("/tmp/foo")]))
+    }
+
+    func testListWithIncludeAllReturnsOutOfScopeProjectSecrets() async {
+        _ = await handler.handle(makeRequest(method: "vault.init"), sessionID: sid)
+        _ = await handler.handle(makeRequest(
+            method: "vault.add",
+            params: [
+                "name": .string("proj-key"),
+                "value": .string("v"),
+                "description": .string("d"),
+                "scope": .string("project"),
+                "roots": .array([.string("/tmp/foo")]),
+            ]
+        ), sessionID: sid)
+
+        // Without include_all and from out-of-scope cwd, the project secret is hidden.
+        let filtered = await handler.handle(makeRequest(method: "vault.list"), sessionID: sid, peerCwd: "/elsewhere")
+        if case .array(let arr) = filtered.result {
+            XCTAssertTrue(arr.isEmpty, "out-of-scope project secret leaked into default list")
+        } else {
+            XCTFail("expected array")
+        }
+
+        // With include_all, the project secret comes back.
+        let all = await handler.handle(makeRequest(
+            method: "vault.list",
+            params: ["include_all": .bool(true)]
+        ), sessionID: sid, peerCwd: "/elsewhere")
+        if case .array(let arr) = all.result {
+            XCTAssertEqual(arr.count, 1)
+        } else {
+            XCTFail("expected array")
+        }
+    }
+
+    func testAddProjectScopeWithEmptyRootsReturnsInvalidParams() async {
+        _ = await handler.handle(makeRequest(method: "vault.init"), sessionID: sid)
+        let resp = await handler.handle(makeRequest(
+            method: "vault.add",
+            params: [
+                "name": .string("k"),
+                "value": .string("v"),
+                "description": .string("d"),
+                "scope": .string("project"),
+                "roots": .array([]),
+            ]
+        ), sessionID: sid)
+        XCTAssertEqual(resp.error?.code, RPCErrorCode.invalidParams)
+    }
+
     // MARK: - Session isolation
 
     func testHandlerThreadsSessionIDIntoVaultCalls() async throws {

@@ -122,4 +122,7 @@ enum RPCErrorCode {
     static let vaultLocked = -32001
     static let authRequired = -32002
     static let secretNotFound = -32003
+    /// The named secret exists but the calling peer's cwd is outside the
+    /// project root(s) it is bound to. The CLI surfaces this as a hint.
+    static let secretOutOfScope = -32010
 }

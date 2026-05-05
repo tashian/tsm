@@ -30,12 +30,17 @@ final class SocketServer: @unchecked Sendable {
     // (LOCAL_PEEREPID) is not relevant here because setsid affects real and
     // effective sessions equally and we want session-id resolution to follow
     // the peer's actual process, not whatever setuid masquerade is in effect.
-    private func peerSessionID(fd: Int32) -> pid_t? {
+    /// Resolve the peer pid + durable session id for the connection. Cwd is
+    /// deliberately *not* captured here — it's resolved per-RPC in
+    /// `handleConnection` so each call sees the kernel's current view (a
+    /// long-lived connection might outlive a `cd`).
+    private func peerInfo(fd: Int32) -> (peerPID: pid_t, sessionID: pid_t)? {
         var pid: pid_t = 0
         var len = socklen_t(MemoryLayout<pid_t>.size)
         let rc = getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &len)
         guard rc == 0, pid > 0 else { return nil }
-        return PeerSession.resolveDurableSessionID(peerPID: pid)
+        guard let sid = PeerSession.resolveDurableSessionID(peerPID: pid) else { return nil }
+        return (pid, sid)
     }
 
     func start() throws {
@@ -82,11 +87,11 @@ final class SocketServer: @unchecked Sendable {
             guard let self = self else { return }
             let clientFd = accept(self.serverFd, nil, nil)
             guard clientFd >= 0 else { return }
-            guard let sid = self.peerSessionID(fd: clientFd) else {
+            guard let info = self.peerInfo(fd: clientFd) else {
                 close(clientFd)
                 return
             }
-            Task { await self.handleConnection(clientFd, sessionID: sid) }
+            Task { await self.handleConnection(clientFd, peerPID: info.peerPID, sessionID: info.sessionID) }
         }
         source.setCancelHandler { [serverFd = self.serverFd] in
             close(serverFd)
@@ -101,7 +106,7 @@ final class SocketServer: @unchecked Sendable {
         unlink(socketPath)
     }
 
-    private func handleConnection(_ fd: Int32, sessionID: pid_t) async {
+    private func handleConnection(_ fd: Int32, peerPID: pid_t, sessionID: pid_t) async {
         defer { close(fd) }
 
         var buffer = Data()
@@ -137,7 +142,11 @@ final class SocketServer: @unchecked Sendable {
                     continue
                 }
 
-                let response = await handler.handle(request, sessionID: sessionID)
+                // Per-RPC peer-cwd lookup. A long-lived connection may
+                // outlive a `cd`, so we re-ask the kernel each time rather
+                // than caching at accept().
+                let peerCwd = PeerCwd.resolve(peerPID: peerPID)
+                let response = await handler.handle(request, sessionID: sessionID, peerCwd: peerCwd)
                 writeResponse(response, to: fd)
 
                 if request.method == "daemon.shutdown" {

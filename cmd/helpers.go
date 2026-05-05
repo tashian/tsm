@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"golang.org/x/term"
 
@@ -76,10 +77,43 @@ func formatRPCError(err *jsonrpc.RPCError) string {
 		return fmt.Sprintf("%s\nAuthenticate via Touch ID to proceed.", err.Message)
 	case jsonrpc.CodeSecretNotFound:
 		return fmt.Sprintf("%s\nRun 'tsm list' to see available secrets.", err.Message)
+	case jsonrpc.CodeSecretOutOfScope:
+		// Daemon includes {name, roots} in data so we can render an
+		// actionable hint: which secret, where it's bound, what to do.
+		name, _ := err.Data["name"].(string)
+		roots := stringSliceFromData(err.Data["roots"])
+		rootsStr := ""
+		if len(roots) > 0 {
+			rootsStr = roots[0]
+			if len(roots) > 1 {
+				rootsStr += " (or one of: " + strings.Join(roots, ", ") + ")"
+			}
+		}
+		return fmt.Sprintf(
+			"Secret %q is project-scoped to %s. cd into that directory to access it. Use 'tsm list --all' to see all bindings.",
+			name, rootsStr,
+		)
 	default:
 		return err.Message
 	}
 }
+
+// stringSliceFromData unpacks a JSON array of strings out of an RPC error's
+// untyped `data` map. Tolerant of nil and unexpected shapes.
+func stringSliceFromData(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 
 // handleError formats and prints an error, returning it for cobra.
 func handleError(err error) error {

@@ -1,5 +1,13 @@
 import Foundation
 
+// Sentinel scope values stored on `Secret.scope`. Kept as plain strings (not
+// an enum) so older vault JSON forward-decodes without crashing if a future
+// scope variant lands.
+enum SecretScope {
+    static let global = "global"
+    static let project = "project"
+}
+
 struct Secret: Codable, Equatable, Sendable {
     let name: String
     var displayName: String
@@ -10,13 +18,20 @@ struct Secret: Codable, Equatable, Sendable {
     let created: Date
     var updated: Date?
 
+    // Project-scoping. `scope == "global"` ignores `roots`. `scope == "project"`
+    // restricts the secret to peers whose cwd is inside any of `roots`.
+    var scope: String
+    var roots: [String]
+
     enum CodingKeys: String, CodingKey {
         case name, value, description, confirm, tags, created, updated
         case displayName = "display_name"
+        case scope, roots
     }
 
     init(name: String, displayName: String = "", value: String, description: String = "",
-         confirm: Bool = false, tags: [String] = [], created: Date, updated: Date? = nil) {
+         confirm: Bool = false, tags: [String] = [], created: Date, updated: Date? = nil,
+         scope: String = SecretScope.global, roots: [String] = []) {
         self.name = name
         self.displayName = displayName
         self.value = value
@@ -25,10 +40,13 @@ struct Secret: Codable, Equatable, Sendable {
         self.tags = tags
         self.created = created
         self.updated = updated
+        self.scope = scope
+        self.roots = roots
     }
 
-    // Custom decoder so vault files written before display_name was a field
-    // decode cleanly with displayName == "".
+    // Custom decoder so vault files written before display_name / scope / roots
+    // existed decode cleanly with the documented defaults. No envelope-version
+    // bump: the format is structurally identical and the new fields are additive.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.name = try c.decode(String.self, forKey: .name)
@@ -39,6 +57,8 @@ struct Secret: Codable, Equatable, Sendable {
         self.tags = try c.decode([String].self, forKey: .tags)
         self.created = try c.decode(Date.self, forKey: .created)
         self.updated = try c.decodeIfPresent(Date.self, forKey: .updated)
+        self.scope = (try? c.decodeIfPresent(String.self, forKey: .scope)) ?? SecretScope.global
+        self.roots = (try? c.decodeIfPresent([String].self, forKey: .roots)) ?? []
     }
 }
 
@@ -48,9 +68,11 @@ struct SecretMetadata: Codable, Equatable, Sendable {
     let description: String
     let confirm: Bool
     let tags: [String]
+    let scope: String
+    let roots: [String]
 
     enum CodingKeys: String, CodingKey {
-        case name, description, confirm, tags
+        case name, description, confirm, tags, scope, roots
         case displayName = "display_name"
     }
 
@@ -60,6 +82,8 @@ struct SecretMetadata: Codable, Equatable, Sendable {
         self.description = secret.description
         self.confirm = secret.confirm
         self.tags = secret.tags
+        self.scope = secret.scope
+        self.roots = secret.roots
     }
 }
 
