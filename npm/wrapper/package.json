@@ -22,9 +22,13 @@
   "bin": {
     "tsm": "tsm"
   },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
   "files": [
     "tsm",
     "shim.js",
+    "scripts/postinstall.js",
     "README.md",
     "LICENSE"
   ],
