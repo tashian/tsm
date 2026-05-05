@@ -39,7 +39,8 @@ func (e *RPCError) Error() string {
 
 // Well-known tsm error codes.
 const (
-	CodeVaultLocked    = -32001
-	CodeAuthRequired   = -32002
-	CodeSecretNotFound = -32003
+	CodeVaultLocked      = -32001
+	CodeAuthRequired     = -32002
+	CodeSecretNotFound   = -32003
+	CodeSecretOutOfScope = -32010
 )
