@@ -71,6 +71,8 @@ The workflow:
 6. Publishes `@tashian/tsm@<version>` second
 7. Both npm publishes carry provenance attestations linking back to this exact workflow run
 
+The `@tashian/tsm` wrapper ships a `postinstall` script that SIGTERMs any running `tsmd` on darwin so upgrades pick up the new binary on the next `tsm` invocation. It is a no-op on other platforms.
+
 ## Local dry-run
 
 Before tagging, you can sanity-check the build and packaging on your laptop:
