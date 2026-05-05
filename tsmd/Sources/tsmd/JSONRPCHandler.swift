@@ -2,12 +2,15 @@ import Foundation
 
 actor JSONRPCHandler {
     let vault: Vault
+    let idleTracker: IdleTracker
 
-    init(vault: Vault) {
+    init(vault: Vault, idleTracker: IdleTracker = IdleTracker()) {
         self.vault = vault
+        self.idleTracker = idleTracker
     }
 
     func handle(_ request: JSONRPCRequest, sessionID: pid_t) async -> JSONRPCResponse {
+        await idleTracker.bump()
         do {
             let result = try await dispatch(request, sessionID: sessionID)
             return JSONRPCResponse(result: result, id: request.id)
