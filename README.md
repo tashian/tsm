@@ -4,9 +4,11 @@
 
 Coding agents need credentials for networked CLI tools and API calls.
 Yet storing credentials unencrypted in `.env` and JSON files is insecure.
-And heavyweight secrets managers like 1Password or Bitwarden are architecturally mismatched for coding agents,
+And even inside the macOS keychain, secrets may be readable by any process running as you.
+Heavyweight secrets managers like 1Password or Bitwarden are architecturally mismatched for coding agents,
 requiring Touch ID on every credential read,
 sometimes several times in a row during a single agent turn.
+And credential gateways like OneCLI are great when a fleet of agents must never see real keys, but too heavy for a single developer on one machine needing local access to their secrets.
 
 With `tsm`, credentials are stored in an encrypted vault file.
 Touch ID unlocks the vault for 30 minutes,
@@ -31,6 +33,12 @@ What `tsm` defends against:
 
 Behind the scenes, `tsm` is a Go CLI, it uses JSON-RPC over a Unix socket to the `tsmd` Swift daemon, which is started on demand.
 The model is similar to `ssh-agent`.
+
+## Encryption at rest is not enough
+
+The real question for a local secret is whether each *access* to it is deliberate.
+
+`tsm` changes the unit of trust from "you are logged in" to "you unlocked this vault on purpose." The master key is gated by Touch ID, and every unlock is deliberate. Unlocks are also scoped to a single session: unlocking the vault in your working shell does not unlock it anywhere else, so a process in another terminal session has to clear its own Touch ID prompt, which you would see and could deny. Secret theft becomes noisy and time-bounded, instead of invisible and permanent.
 
 ## Installation
 
@@ -145,6 +153,12 @@ tsm get gh-pat   --format "env GITHUB_TOKEN"     > /dev/shm/envfile
 ```
 
 `tsm get --format` refuses to write to a TTY; always redirect.
+
+## tsm and CI
+
+`tsm` is a local-development tool. It depends on the macOS Keychain, Touch ID, and an on-demand daemon, none of which exist in a CI runner. Do not install `tsm` in CI.
+
+The shared surface between `tsm` and CI is the environment variable, and it is a clean one. A secret reaches your program through an env var; locally, `tsm run` fills that var from the vault, and in CI your CI system fills the same var from its own secret store (GitHub Actions secrets, and so on). Everything downstream of the env var is identical and never mentions `tsm`.
 
 ## Build requirements
 
