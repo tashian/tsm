@@ -2,9 +2,7 @@
 
 `tsm` is a tiny secrets manager for coding agents on macOS.
 
-Coding agents need credentials for networked CLI tools and API calls.
-Yet storing credentials unencrypted in `.env` and JSON files is insecure.
-Even inside the macOS keychain, secrets may be readable by any process running as you.
+Coding agents need credentials for networked CLI tools and API calls. Yet storing credentials unencrypted in `.env` and JSON files is insecure. Even inside the macOS keychain, secrets may be readable by any process running as you.
 
 ## Encryption at rest is not enough
 
@@ -12,46 +10,37 @@ The real question for a local secret is whether each *access* to it is deliberat
 
 `tsm` changes the unit of trust from "you are logged in" to "you unlocked this vault on purpose." The master key is gated by Touch ID, and every unlock is deliberate. Unlocks are also scoped to a single session: unlocking the vault in your working shell does not unlock it anywhere else, so a process in another terminal session has to clear its own Touch ID prompt, which you would see and could deny. Secret theft becomes noisy and time-bounded, instead of invisible and permanent.
 
-## Why I built this
-
-The traditional heavyweights like 1Password or Bitwarden are architecturally mismatched for coding agents,
-requiring Touch ID on every credential read, sometimes several times in a row during a single agent turn.
-
-Credential gateways like OneCLI are great when a fleet of agents must never see real keys,
-but too heavy for a single developer on one machine needing local access to their secrets.
-
-With `tsm`, credentials are stored in an encrypted vault file,
-with **vault access scoped to a single shell or agent session**.
-Touch ID unlocks the vault for 30 minutes.
-(Sensitive secrets can be set to require Touch ID on every access.)
-
-It's super lightweight, open source, and easy to verify:  
-Bitwarden is 1.8 million lines of code, `tsm` is 3,000.
-
-Unencrypted secrets are stored in memory only,
-and `tsm` auto-locks on screen lock or system sleep.
-
-It aligns with my article [How to Handle Secrets on the Command Line](https://smallstep.com/blog/command-line-secrets/),
-values are always read from stdin, a file, or the TUI.
-
 ### What `tsm` defends against
 
-- **Cross-session access**. A LaunchAgent, browser-spawned helper, prompt-injected agent in another terminal, or any other process running as you that connects to the daemon socket while your main session is unlocked still has to clear its own Touch ID prompt — which appears on your screen and which you can deny. Sessions unlock independently; unlocking your working shell does not unlock anyone else.
-- **Absent user**. The vault auto-locks on screen lock and system sleep, so an unattended laptop is not an open vault.
-- **Secrets at rest**. The vault file is AES-GCM encrypted. The master key lives only in the macOS Keychain (Touch ID gated) and in daemon RAM while at least one session is unlocked — never on disk in the clear.
+- **Cross-session access.** A LaunchAgent, browser-spawned helper, prompt-injected agent in another terminal, or any other process running as you that connects to the daemon socket while your main session is unlocked still has to clear its own Touch ID prompt — which appears on your screen and which you can deny. Sessions unlock independently; unlocking your working shell does not unlock anyone else.
+- **Absent user.** The vault auto-locks on screen lock and system sleep, so an unattended laptop is not an open vault.
+- **Secrets at rest.** The vault file is AES-GCM encrypted. The master key lives only in the macOS Keychain (Touch ID gated) and in daemon RAM while at least one session is unlocked — never on disk in the clear.
 
 ### What `tsm` doesn't defend against
 
-`tsm` is not a sandbox. A process that has already compromised your unlocked session — for example, a prompt-injected coding agent in the same shell where you ran `tsm unlock` — has the same access to the vault that you do. The same is true of anything with debugger or root privileges on your machine. The goal is to make secret access deliberate and visible, not to contain code you have already given access to.
+`tsm` is not a sandbox. A process that has compromised your unlocked session — for example, a prompt-injected coding agent in the same shell where you ran `tsm unlock` — can read any secret you have not gated with `[confirm]`, just as you could. Confirm-gated secrets still require a visible Touch ID prompt per access, and every access is recorded in the audit log, so even in this case theft is not silent. The same caveats apply to anything with debugger or root privileges. The goal is to make secret access deliberate and visible, not to contain code you have already given access to.
 
-### How it works
+## How it works
 
-Behind the scenes, `tsm` is a Go CLI, it uses JSON-RPC over a Unix socket to the `tsmd` Swift daemon, which is started on demand.
-The model is similar to `ssh-agent`.
+`tsm` is a Go CLI that speaks JSON-RPC over a Unix socket to the `tsmd` Swift daemon, which is started on demand. The model is similar to `ssh-agent`.
+
+Secrets are always read from stdin, a file, or the TUI — never from a command-line flag, which would leak them into shell history and `/proc/<pid>/cmdline`. This aligns with my article [How to Handle Secrets on the Command Line](https://smallstep.com/blog/command-line-secrets/).
+
+Unencrypted secrets are stored in memory only, and `tsm` auto-locks on screen lock and system sleep.
+
+## Why I built this
+
+The traditional heavyweights like 1Password and Bitwarden are architecturally mismatched for coding agents, requiring Touch ID on every credential read, sometimes several times in a row during a single agent turn.
+
+Credential gateways like OneCLI are great when a fleet of agents must never see real keys, but too heavy for a single developer on one machine needing local access to their secrets.
+
+`tsm` sits in the middle: an encrypted vault file with **access scoped to a single shell or agent session**, unlocked by Touch ID for 30 minutes at a time, with per-secret `[confirm]` gates for sensitive credentials.
+
+It's lightweight, open source, and easy to verify: Bitwarden is 1.8 million lines of code, `tsm` is 3,000.
 
 ## Installation
 
-Install with bun, npm, or pnpm. Either pulls a prebuilt, sigstore-signed binary (macOS arm64 only).
+Install with bun, npm, or pnpm. Each pulls a prebuilt, sigstore-signed binary (macOS arm64 only).
 
 ```bash
 bun install -g @tashian/tsm
