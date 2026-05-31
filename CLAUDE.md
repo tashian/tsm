@@ -42,6 +42,24 @@ pgrep -fl "/.local/bin/tsmd" | awk '{print $1}' | xargs -r kill
 
 The daemon must be ad-hoc signed (Apple Silicon requirement). `swift build` does this automatically. Do **not** run `codesign --remove-signature` on the binary.
 
+## Releasing
+
+Releases are **tag-driven**. Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml` (on a `macos-15` runner), which builds the binaries, creates the GitHub release (tarball + `checksums.txt`, auto-generated notes), and publishes both npm packages.
+
+To cut a release: make sure `main` is green and synced, then
+
+```bash
+git tag -a v0.1.11 -m "v0.1.11 ..." && git push origin v0.1.11
+```
+
+Then watch it: `gh run watch <run-id> --exit-status`. The whole job takes ~1–2 min.
+
+- **Versioning.** v0.1.x patch-bump cadence; the next tag after `vN` is the obvious increment. Bump `main` only via merged PRs first — tag the merge commit, never a feature branch.
+- **Don't hand-edit npm versions.** `npm/wrapper/package.json` and `npm/darwin-arm64/package.json` stay `0.0.0` in the repo; the workflow rewrites both (and the wrapper's `optionalDependencies` pin) from the tag via `jq` at publish time.
+- **Publish order is load-bearing.** Platform package (`@tashian/tsm-darwin-arm64`) publishes *before* the wrapper (`@tashian/tsm`) so the wrapper's `optionalDependencies` resolve. The workflow already orders them; don't reorder.
+- **npm Trusted Publishing.** Auth is OIDC (no token), which needs Node 24 / npm 11. Node 22's npm 10 silently publishes unauthenticated and 404s — don't downgrade the `setup-node` version.
+- **Irreversible.** A published npm version can't be re-published. Confirm the version before pushing the tag.
+
 ## Architecture
 
 ### Caller interface
