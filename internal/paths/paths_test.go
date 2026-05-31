@@ -66,3 +66,22 @@ func TestAccessLog_Default(t *testing.T) {
 		t.Fatalf("expected %s, got %s", expected, p)
 	}
 }
+
+func TestDaemonLog_Default(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	p := DaemonLog()
+	home, _ := os.UserHomeDir()
+	expected := filepath.Join(home, ".local", "share", "tsm", "tsmd.log")
+	if p != expected {
+		t.Fatalf("expected %s, got %s", expected, p)
+	}
+}
+
+func TestDaemonLog_XDG(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/tmp/xdg-data")
+	p := DaemonLog()
+	expected := filepath.Join("/tmp/xdg-data", "tsm", "tsmd.log")
+	if p != expected {
+		t.Fatalf("expected %s, got %s", expected, p)
+	}
+}

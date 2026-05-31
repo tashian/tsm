@@ -32,6 +32,13 @@ func ConfigFile() string {
 	return filepath.Join(configDir(), "config.json")
 }
 
+// DaemonLog returns the path to the tsmd daemon's stdout/stderr log file.
+// The CLI redirects the spawned daemon's output here so it never inherits the
+// caller's stdio (which would hang an agent harness waiting on those fds).
+func DaemonLog() string {
+	return filepath.Join(dataDir(), "tsmd.log")
+}
+
 // TsmdBin returns the expected path to the tsmd binary.
 // Looks in the same directory as the running tsm binary first,
 // then falls back to ~/.local/bin/tsmd.
