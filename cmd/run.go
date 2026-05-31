@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
-	"golang.org/x/term"
 )
 
 // runnerFunc replaces the current process with the given target. In
@@ -28,7 +27,6 @@ type runnerFunc func(path string, argv, addedEnv []string) error
 type runOptions struct {
 	Envs     []string // raw --env flag values, in order
 	Argv     []string // target command + args
-	StdinTTY bool     // result of term.IsTerminal(os.Stdin.Fd())
 	Runner   runnerFunc
 	LookPath func(string) (string, error)
 }
@@ -67,7 +65,6 @@ Examples:
 				return runWith(c, runOptions{
 					Envs:     envs,
 					Argv:     args,
-					StdinTTY: term.IsTerminal(int(os.Stdin.Fd())),
 					Runner:   execveRunner,
 					LookPath: exec.LookPath,
 				})
@@ -100,26 +97,37 @@ func runWith(c client.Caller, opts runOptions) error {
 		return handleError(err)
 	}
 
-	// Inspect confirm flags via vault.list before fetching, so we can refuse
-	// non-TTY callers without first triggering a Touch ID prompt that they
-	// could not respond to.
-	if !opts.StdinTTY {
-		var metas []runSecretMeta
-		if err := c.Call("vault.list", nil, &metas); err != nil {
+	// A confirm-gated secret triggers a Touch ID prompt presented by the
+	// daemon. The daemon can present that prompt whenever it lives in the
+	// user's GUI session, regardless of how this CLI's stdin is wired — so we
+	// gate on the daemon's biometric presentability (auth.can_confirm), not on
+	// whether our own stdin is a TTY. This lets background/non-TTY callers
+	// (e.g. an agent's Bash tool) use confirm-gated secrets, while still
+	// refusing cleanly in truly headless contexts with no GUI login session,
+	// rather than triggering a prompt nobody can see.
+	var metas []runSecretMeta
+	if err := c.Call("vault.list", nil, &metas); err != nil {
+		return handleError(err)
+	}
+	needed := map[string]bool{}
+	for _, m := range mappings {
+		needed[m.Secret] = true
+	}
+	var confirmSecrets []string
+	for _, m := range metas {
+		if needed[m.Name] && m.Confirm {
+			confirmSecrets = append(confirmSecrets, m.Name)
+		}
+	}
+	if len(confirmSecrets) > 0 {
+		var resp struct {
+			CanConfirm bool `json:"can_confirm"`
+		}
+		if err := c.Call("auth.can_confirm", nil, &resp); err != nil {
 			return handleError(err)
 		}
-		needed := map[string]bool{}
-		for _, m := range mappings {
-			needed[m.Secret] = true
-		}
-		var blocking []string
-		for _, m := range metas {
-			if needed[m.Name] && m.Confirm {
-				blocking = append(blocking, m.Name)
-			}
-		}
-		if len(blocking) > 0 {
-			return fmt.Errorf("refusing to run: secret(s) require confirm-mode authentication but stdin is not a TTY: %s\nChange the secret's confirm setting via 'tsm edit' if non-interactive use is intended", strings.Join(blocking, ", "))
+		if !resp.CanConfirm {
+			return fmt.Errorf("refusing to run: secret(s) require Touch ID confirmation but no biometric prompt can be presented here (no GUI login session): %s\nRun from a session where Touch ID is available, or change the secret's confirm setting via 'tsm edit'", strings.Join(confirmSecrets, ", "))
 		}
 	}
 
