@@ -81,11 +81,24 @@ tsm get gh-pat   --format "env GITHUB_TOKEN" > /dev/shm/envfile   # docker --env
 
 ## 3. Confirm-gated secrets
 
-Some secrets are flagged `"confirm": true` in `tsm list`. Each access triggers a Touch ID prompt, even if the vault is already unlocked. Before invoking such a secret, tell the user to expect the prompt:
+Some secrets are flagged `"confirm": true` in `tsm list --json`. **Check this flag during discovery (§1)** so you know a Touch ID prompt is coming. Each access to a confirm-gated secret triggers a fresh Touch ID prompt, even when the vault is already unlocked.
 
-> "I'm about to fetch `aws-prod`, which is confirm-gated — please approve the Touch ID prompt."
+**You can use confirm-gated secrets directly — your shell's lack of a TTY does not matter.** The prompt is a system Touch ID dialog presented by the tsm *daemon*, which lives in the user's GUI login session; it appears on the user's screen and they approve it with their finger, no matter how your stdin is wired. So `tsm run --env … -- …` works the same from a background/non-TTY shell as from a terminal. **Before you trigger it, warn the user the prompt is coming** — otherwise a Touch ID dialog pops up unexplained:
 
-If a confirm-gated secret is needed and stdin is not a TTY (e.g., the agent is running headless), `tsm run` will refuse with a clear error. That is intended; the user must change the secret's `confirm` setting via `tsm edit` if non-interactive use is needed.
+> "I'm about to start the server with `anthropic-api-key`, which is confirm-gated — you'll get a Touch ID prompt to approve. For a long-running process it's a one-time cost at startup."
+> ```bash
+> tsm run --env ANTHROPIC_API_KEY=anthropic-api-key -- node server.js
+> ```
+
+For long-lived processes (dev servers, daemons, watchers) the prompt fires once at launch and the child keeps the value in its env for its whole lifetime.
+
+`tsm run` only refuses a confirm-gated secret when the daemon genuinely **cannot** present biometrics — a truly headless context with no GUI login session (CI, cron, ssh without a console session). It checks this up front via the daemon rather than guessing from your TTY:
+
+```
+refusing to run: secret(s) require Touch ID confirmation but no biometric prompt can be presented here (no GUI login session): <name>
+```
+
+If you hit that, you really are somewhere Touch ID can't run. Hand the user a command to run where biometrics are available, or — if they want non-interactive use — **suggest** they drop confirm mode with `tsm edit <name>`. Never run `tsm edit` yourself (see §4); dropping a Touch ID gate is the user's call.
 
 ## 4. Never
 

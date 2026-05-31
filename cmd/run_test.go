@@ -29,10 +29,9 @@ func TestRun_BadEnvFlag(t *testing.T) {
 	mock := &mockCaller{}
 	var rec recordedExec
 	err := runWith(mock, runOptions{
-		Envs:     []string{"NO_EQUALS"},
-		Argv:     []string{"echo"},
-		StdinTTY: true,
-		Runner:   newFakeRunner(&rec),
+		Envs:   []string{"NO_EQUALS"},
+		Argv:   []string{"echo"},
+		Runner: newFakeRunner(&rec),
 	})
 	if err == nil {
 		t.Fatal("expected parse error")
@@ -49,10 +48,9 @@ func TestRun_NoCommand(t *testing.T) {
 	mock := &mockCaller{}
 	var rec recordedExec
 	err := runWith(mock, runOptions{
-		Envs:     []string{"FOO=bar"},
-		Argv:     nil,
-		StdinTTY: true,
-		Runner:   newFakeRunner(&rec),
+		Envs:   []string{"FOO=bar"},
+		Argv:   nil,
+		Runner: newFakeRunner(&rec),
 	})
 	if err == nil {
 		t.Fatal("expected error when no command provided")
@@ -82,7 +80,6 @@ func TestRun_Success(t *testing.T) {
 	err := runWith(mock, runOptions{
 		Envs:     []string{"GITHUB_TOKEN=gh-pat"},
 		Argv:     []string{"echo", "hi"},
-		StdinTTY: true,
 		Runner:   newFakeRunner(&rec),
 		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
 	})
@@ -118,7 +115,6 @@ func TestRun_SecretNotFound(t *testing.T) {
 	err := runWith(mock, runOptions{
 		Envs:     []string{"GITHUB_TOKEN=missing"},
 		Argv:     []string{"echo"},
-		StdinTTY: true,
 		Runner:   newFakeRunner(&rec),
 		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
 	})
@@ -148,7 +144,6 @@ func TestRun_TargetNotFound(t *testing.T) {
 	err := runWith(mock, runOptions{
 		Envs:     []string{"FOO=x"},
 		Argv:     []string{"nonexistent-binary-xyz"},
-		StdinTTY: true,
 		Runner:   newFakeRunner(&rec),
 		LookPath: func(name string) (string, error) { return "", errors.New("not found in PATH") },
 	})
@@ -160,7 +155,10 @@ func TestRun_TargetNotFound(t *testing.T) {
 	}
 }
 
-func TestRun_ConfirmAndNonTTY_Refused(t *testing.T) {
+// When a confirm-gated secret is requested but the daemon reports it cannot
+// present a Touch ID prompt (no GUI login session), run refuses cleanly —
+// regardless of the caller's TTY.
+func TestRun_ConfirmAndBiometricsUnavailable_Refused(t *testing.T) {
 	mock := &mockCaller{
 		onCall: func(method string, params map[string]any) (any, error) {
 			switch method {
@@ -168,6 +166,8 @@ func TestRun_ConfirmAndNonTTY_Refused(t *testing.T) {
 				return nil, nil
 			case "vault.list":
 				return []map[string]any{{"name": "billing-key", "confirm": true}}, nil
+			case "auth.can_confirm":
+				return map[string]any{"can_confirm": false}, nil
 			}
 			return nil, errors.New("unexpected " + method)
 		},
@@ -176,7 +176,6 @@ func TestRun_ConfirmAndNonTTY_Refused(t *testing.T) {
 	err := runWith(mock, runOptions{
 		Envs:     []string{"BILLING=billing-key"},
 		Argv:     []string{"echo"},
-		StdinTTY: false, // not a TTY
 		Runner:   newFakeRunner(&rec),
 		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
 	})
@@ -186,11 +185,45 @@ func TestRun_ConfirmAndNonTTY_Refused(t *testing.T) {
 	if !strings.Contains(err.Error(), "billing-key") {
 		t.Fatalf("error should name the offending secret, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "TTY") && !strings.Contains(err.Error(), "tty") {
-		t.Fatalf("error should mention TTY, got: %v", err)
-	}
 	if rec.Path != "" {
 		t.Fatal("runner must not be invoked")
+	}
+}
+
+// A confirm-gated secret proceeds when the daemon reports biometrics CAN be
+// presented — even from a non-TTY caller. The daemon owns the Touch ID prompt;
+// the caller's stdin is irrelevant.
+func TestRun_ConfirmAndBiometricsAvailable_Proceeds(t *testing.T) {
+	mock := &mockCaller{
+		onCall: func(method string, params map[string]any) (any, error) {
+			switch method {
+			case "vault.unlock":
+				return nil, nil
+			case "vault.list":
+				return []map[string]any{{"name": "billing-key", "confirm": true}}, nil
+			case "auth.can_confirm":
+				return map[string]any{"can_confirm": true}, nil
+			case "vault.get":
+				return map[string]string{"name": "billing-key", "value": "sk_live_xyz"}, nil
+			}
+			return nil, errors.New("unexpected " + method)
+		},
+	}
+	var rec recordedExec
+	err := runWith(mock, runOptions{
+		Envs:     []string{"BILLING=billing-key"},
+		Argv:     []string{"echo"},
+		Runner:   newFakeRunner(&rec),
+		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Path != "/bin/echo" {
+		t.Fatalf("runner should have been invoked, got path %q", rec.Path)
+	}
+	if len(rec.Env) != 1 || rec.Env[0] != "BILLING=sk_live_xyz" {
+		t.Fatalf("env: %v", rec.Env)
 	}
 }
 
@@ -212,7 +245,6 @@ func TestRun_DedupesVaultGets(t *testing.T) {
 	err := runWith(mock, runOptions{
 		Envs:     []string{"GITHUB_TOKEN=gh-pat", "GH_TOKEN=gh-pat"},
 		Argv:     []string{"echo"},
-		StdinTTY: true,
 		Runner:   newFakeRunner(&rec),
 		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
 	})
