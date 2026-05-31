@@ -1,11 +1,11 @@
 package daemon
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"tsm/internal/client"
@@ -44,43 +44,58 @@ func spawn(sockPath string) (string, error) {
 	os.Remove(sockPath)
 
 	cmd := exec.Command(tsmdBin, "--socket", sockPath)
-	cmd.Stderr = os.Stderr
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", fmt.Errorf("stdout pipe: %w", err)
+	// The daemon outlives this short-lived CLI. If it inherited our stdout/
+	// stderr, those fds would stay open for the daemon's whole life — and an
+	// agent harness (e.g. Claude Code's Bash tool) that waits for its command's
+	// stdio pipes to reach EOF would hang forever on the first tsm call that
+	// has to spawn the daemon. Redirect the daemon's output to its own log file
+	// (or /dev/null), and never hand it our inherited fds. A nil Stdout/Stderr
+	// makes os/exec connect the child to /dev/null, so the nil fallback is safe.
+	if logw := daemonLogWriter(); logw != nil {
+		cmd.Stdout = logw
+		cmd.Stderr = logw
+		defer logw.Close()
 	}
+
+	// Put the daemon in its own session so signals aimed at the CLI's process
+	// group (Ctrl-C, the harness killing the foreground command) don't take it
+	// down with them.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("start tsmd: %w", err)
 	}
 
-	scanner := bufio.NewScanner(stdout)
-	done := make(chan string, 1)
-	go func() {
-		if scanner.Scan() {
-			done <- scanner.Text()
-		}
-	}()
-
-	select {
-	case line := <-done:
-		if line != "" {
-			sockPath = line
-		}
-	case <-time.After(spawnTimeout):
-		cmd.Process.Kill()
-		return "", fmt.Errorf("tsmd did not print socket path within %s", spawnTimeout)
-	}
-
+	// Readiness is the socket becoming live. We pass --socket explicitly, so
+	// there's no need to read a path back from the daemon's stdout.
 	if err := waitForSocket(sockPath, spawnTimeout); err != nil {
 		cmd.Process.Kill()
-		return "", fmt.Errorf("tsmd started but socket not ready: %w", err)
+		return "", fmt.Errorf("tsmd started but socket not ready within %s (see %s): %w", spawnTimeout, paths.DaemonLog(), err)
 	}
 
-	go cmd.Wait()
+	// Fully disown: we never wait on the daemon, and it has its own session.
+	_ = cmd.Process.Release()
 
 	return sockPath, nil
+}
+
+// daemonLogWriter opens the daemon log file for appending, falling back to
+// /dev/null. It never returns the caller's stdio: the spawned daemon must not
+// inherit fds that an agent harness is waiting on. Returns nil only if even
+// /dev/null can't be opened, in which case the caller leaves Stdout/Stderr nil
+// (os/exec then connects the child to /dev/null anyway).
+func daemonLogWriter() *os.File {
+	logPath := paths.DaemonLog()
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err == nil {
+		if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
+			return f
+		}
+	}
+	if f, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0); err == nil {
+		return f
+	}
+	return nil
 }
 
 func waitForSocket(path string, timeout time.Duration) error {
