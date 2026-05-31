@@ -63,6 +63,25 @@ final class JSONRPCHandlerTests: XCTestCase {
         XCTAssertEqual(obj["locked"], .bool(false))
     }
 
+    // MARK: - auth.can_confirm
+
+    func testAuthCanConfirmReportsBiometricAvailability() async {
+        auth.canAuthenticateResult = true
+        let yes = await handler.handle(makeRequest(method: "auth.can_confirm"), sessionID: sid)
+        guard case .object(let obj) = yes.result else {
+            XCTFail("Expected object result"); return
+        }
+        XCTAssertEqual(obj["can_confirm"], .bool(true))
+
+        auth.canAuthenticateResult = false
+        let no = await handler.handle(makeRequest(method: "auth.can_confirm"), sessionID: sid)
+        guard case .object(let obj2) = no.result else {
+            XCTFail("Expected object result"); return
+        }
+        XCTAssertEqual(obj2["can_confirm"], .bool(false),
+            "auth.can_confirm must reflect the daemon's biometric presentability, not the caller's TTY")
+    }
+
     // MARK: - CRUD
 
     func testVaultAddAndGet() async {

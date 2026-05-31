@@ -61,11 +61,14 @@ final class MockKeychain: KeychainProvider, @unchecked Sendable {
 final class MockAuth: AuthProvider, @unchecked Sendable {
     var shouldFail = false
     var authenticateCalled = false
+    var canAuthenticateResult = true
 
     func authenticate(reason: String) async throws {
         authenticateCalled = true
         if shouldFail { throw VaultError.authFailed }
     }
+
+    func canAuthenticate() -> Bool { canAuthenticateResult }
 }
 
 final class MockVaultStore: VaultStoreProvider, @unchecked Sendable {

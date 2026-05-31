@@ -135,6 +135,9 @@ actor JSONRPCHandler {
             try await vault.reset(clientId: clientId)
             return .object(["ok": .bool(true)])
 
+        case "auth.can_confirm":
+            return .object(["can_confirm": .bool(await vault.canConfirm())])
+
         case "daemon.capabilities":
             let caps = await vault.capabilities()
             return encodeToJSONValue(caps)

@@ -24,6 +24,13 @@ protocol KeychainProvider: Sendable {
 
 protocol AuthProvider: Sendable {
     func authenticate(reason: String) async throws
+    /// Whether a biometric prompt can be presented right now: biometrics are
+    /// enrolled, not locked out, and a GUI login session exists to host the
+    /// dialog. Does NOT present any UI. This is independent of the connecting
+    /// CLI's TTY — the daemon owns the prompt and can present one whenever it
+    /// lives in the user's GUI session, regardless of how the caller's stdin
+    /// is wired.
+    func canAuthenticate() -> Bool
 }
 
 protocol VaultStoreProvider: Sendable {
@@ -86,6 +93,12 @@ actor Vault {
     }
 
     var isLocked: Bool { data == nil }
+
+    /// Whether the daemon can currently present a Touch ID prompt. Lets a
+    /// caller decide, before requesting a confirm-gated secret, whether the
+    /// confirmation can actually happen here — rather than gating on the
+    /// caller's TTY, which has nothing to do with biometric presentability.
+    func canConfirm() -> Bool { auth.canAuthenticate() }
 
     // MARK: - Init
 
