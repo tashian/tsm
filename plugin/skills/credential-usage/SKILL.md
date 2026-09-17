@@ -1,125 +1,148 @@
 ---
 name: credential-usage
-description: Use whenever a task requires an API key, token, password, or other credential. Checks the local tsm vault first; teaches safe retrieval patterns by tool category.
+description: Use whenever a task needs an API key, token, password, database URL, certificate, or any other credential. That includes configuring an MCP server, calling an authenticated API with curl, running a CLI like gh/aws/openai, running psql or docker compose against a real service, filling in a .env, or when the user pastes a secret into chat or asks where to keep one. Consult it even when the user never says "secret" or "tsm". macOS with the tsm vault installed.
 ---
 
 # Using credentials from the tsm vault
 
-When a task needs an API key, token, password, database URL, or other credential, use the local `tsm` vault before asking the user for it. The vault is biometric-gated (Touch ID) and the user has already approved the patterns below by installing this plugin.
+`tsm` is a Touch ID-gated secrets vault on this Mac. The user installed this plugin so you pull credentials from it instead of asking, and so you handle them the way this skill describes. `tsm list`, `tsm get`, and `tsm run` are allowlisted for you. Every other `tsm` subcommand (`add`, `edit`, `remove`, `reset`, `init`, `config set`) changes the vault and is the user's to run.
 
-## 1. Discover first
+The first vault access in a session pops a system Touch ID dialog, and the command blocks until the user responds. That is normal. Do not kill or retry it. Later accesses inside the unlock window do not prompt.
 
-Run `tsm list --json` before assuming a credential is missing. Look for a name, description, or tag that matches what you need.
+## Workflow
 
-```bash
-tsm list --json
-# [{"name":"gh-pat","display_name":"GitHub PAT","description":"...","confirm":false,"tags":["github","git"]}, ...]
-```
+1. **Look before asking.** `tsm list --json` returns names, display names, descriptions, tags, and the `confirm` flag. Never values. Match on any of those fields.
+   ```bash
+   tsm list --json
+   # [{"name":"gh-pat","display_name":"GitHub PAT","description":"...","confirm":false,"tags":["github","git"]}]
+   ```
+   One match: use it. Several plausible matches: ask which. None: tell the user, suggest a name, and stop. Do not ask for the value unless nothing matches.
+2. **Pick the delivery pattern** for the tool (below). Prefer `tsm run` whenever the tool reads an environment variable.
+3. **If the entry has `"confirm": true`, warn before using it** (see "Confirm-gated secrets").
 
-If `tsm list` shows the credential, use it via one of the patterns below. Only ask the user if no matching secret exists.
+## The one rule: the value never lands in an argument list
 
-## 2. Pattern by tool category
+Anything in a process's argv is visible in `ps` to every user on the machine and is written to shell history. So the value has to travel by environment variable, file descriptor, or a 0600 temp file, never as part of a command line. `$(tsm get x)` expanded inside a flag value breaks the rule even though it looks tidy.
 
-Pick the pattern that matches the consuming tool. Never fall back to a less safe pattern just because it is shorter.
+Three carriers that respect it:
 
-### MCP server credentials
+- **`tsm run --env VAR=name -- cmd`** sets VAR in the child process only. The parent shell is untouched and the variable is gone when the child exits.
+- **`<(tsm get name)`** process substitution. The tool receives a `/dev/fd/N` path and the value never touches disk. Works when the tool reads the path once. Your Bash tool runs bash, so this syntax is available to you.
+- **`mktemp`** gives a 0600 file under the per-user `$TMPDIR`. Redirect into it and `rm` it when done. There is no `/dev/shm` on macOS.
 
-MCP server configs in `.mcp.json` accept `command`/`args`. Wrap the server in `tsm run`:
+## Patterns by tool type
 
-```json
-{
-  "github": {
-    "command": "tsm",
-    "args": ["run", "--env", "GITHUB_TOKEN=gh-pat", "--", "github-mcp-server"]
-  }
-}
-```
-
-### Env-var CLI tools (gh, openai, anthropic, aws, etc.)
-
-For one-off invocations:
+### Anything that reads an env var (gh, aws, openai, anthropic, PGPASSWORD, most SDKs)
 
 ```bash
 tsm run --env GITHUB_TOKEN=gh-pat -- gh pr list
-tsm run --env OPENAI_API_KEY=openai-key -- openai api models.list
+tsm run --env PGPASSWORD=pg-prod-password -- psql -h db.example.com -U app mydb -f migrate.sql
+tsm run --env A=key-a --env B=key-b -- ./deploy.sh prod
 ```
 
-For one-shot value capture inside a single shell pipeline (no env-var leakage):
+### MCP servers in `.mcp.json`
+
+Wrap the server command so it inherits the credential at startup:
+
+```json
+{ "github": { "command": "tsm", "args": ["run", "--env", "GITHUB_TOKEN=gh-pat", "--", "github-mcp-server"] } }
+```
+
+### docker compose and docker run
+
+A bare key under `environment:` passes the variable through from the parent process, so `tsm run` covers compose with no `env_file:` at all:
+
+```yaml
+services:
+  worker:
+    environment: [SENTRY_DSN]
+```
+```bash
+tsm run --env SENTRY_DSN=sentry-dsn -- docker compose up worker
+```
+
+Plain `docker run` has no pass-through, so generate an `--env-file` in a temp file:
 
 ```bash
-curl -H "Authorization: Bearer $(tsm get gh-pat)" https://api.github.com/user
+F=$(mktemp) && tsm get gh-pat --format "env GITHUB_TOKEN" > "$F" && docker run --env-file "$F" some-image; rm -f "$F"
 ```
 
-### File-flag tools (curl --cacert, psql --pgpass, gcloud --key-file)
+### curl and other HTTP clients
 
-Process substitution keeps the secret off disk entirely:
+curl reads extra headers from a file with `-H @file`. `printf` is a bash builtin, so the header line is assembled inside the shell and reaches curl only through a file descriptor:
+
+```bash
+curl -H @<(printf 'Authorization: Bearer %s\n' "$(tsm get gh-pat)") https://api.github.com/user
+```
+
+`curl -H "Authorization: Bearer $(tsm get gh-pat)"` is the tempting version, and it puts the token in curl's argv.
+
+### Tools that take a file path (`--cacert`, `--key-file`, `PGPASSFILE`)
+
+If the tool reads the path once, process substitution keeps the value off disk:
 
 ```bash
 curl --cacert <(tsm get ca-cert) https://internal.example.com
-PGPASSFILE=<(tsm get pg-prod --format pgpass) psql --no-password "service=mydb"
 ```
 
-If the tool re-reads the file after first read, write to `/dev/shm` (memory-backed on Linux, ramdisk on macOS):
+If the tool insists on a regular file, or re-reads it, use a temp file. libpq is the usual case: it ignores a `PGPASSFILE` that is not a plain 0600 file, so `<(...)` does not work for pgpass.
 
 ```bash
-KEYFILE=$(mktemp /dev/shm/key.XXXXXX) && \
-  tsm get client-key --to-file "$KEYFILE" && \
-  some-tool --key "$KEYFILE" ; rm -f "$KEYFILE"
+F=$(mktemp) && tsm get pg-prod --format pgpass > "$F" && PGPASSFILE="$F" psql --no-password "service=mydb" -f migrate.sql; rm -f "$F"
 ```
 
-### Wire-format-specific tools
+The `pgpass` formatter expects the stored value to already be a `host:port:db:user:password` row. If the vault holds only the password, skip the file and use `PGPASSWORD` with `tsm run` as shown above.
 
-For tools that demand a specific wire format, use `tsm get --format`:
+### Wire formats: `tsm get --format`
 
-```bash
-tsm get aws-prod --format aws-credential-process       # AWS credential_process JSON
-tsm get pg-prod  --format pgpass                       # pgpass row
-tsm get gh-pat   --format "env GITHUB_TOKEN" > /dev/shm/envfile   # docker --env-file
+Built-in formatters: `env VAR`, `pgpass`, `aws-credential-process`. `--format` refuses to write to a TTY and cannot be combined with `--to-file`, so redirect into a `mktemp` file; the redirect keeps the file's 0600 mode. AWS is the exception: the CLI runs `credential_process` itself and reads stdout, so the command goes in `~/.aws/config` with no redirect:
+
+```ini
+[profile prod]
+credential_process = tsm get aws-prod --format aws-credential-process
 ```
 
-`tsm get --format` refuses to write to a TTY; always redirect the output.
+### Tools that write their own env file
 
-## 3. Confirm-gated secrets
+Some tools dump their environment to a fixed project path on startup: a test harness that writes `.env.test`, a script that materializes `.env` from `process.env`. If the tool you are about to launch does this, say so before launching, and delete that file when the process exits. Otherwise the vault's protection ends the moment the tool starts.
 
-Some secrets are flagged `"confirm": true` in `tsm list --json`. **Check this flag during discovery (§1)** so you know a Touch ID prompt is coming. Each access to a confirm-gated secret triggers a fresh Touch ID prompt, even when the vault is already unlocked.
+## Confirm-gated secrets
 
-**You can use confirm-gated secrets directly — your shell's lack of a TTY does not matter.** The prompt is a system Touch ID dialog presented by the tsm *daemon*, which lives in the user's GUI login session; it appears on the user's screen and they approve it with their finger, no matter how your stdin is wired. So `tsm run --env … -- …` works the same from a background/non-TTY shell as from a terminal. **Before you trigger it, warn the user the prompt is coming** — otherwise a Touch ID dialog pops up unexplained:
+Entries with `"confirm": true` prompt Touch ID on every access, even inside the unlock window. The daemon presents the dialog in the user's GUI session, so it works from your non-TTY shell, but a dialog that appears with no explanation is alarming. Say what you are about to do and that a prompt will appear:
 
-> "I'm about to start the server with `anthropic-api-key`, which is confirm-gated — you'll get a Touch ID prompt to approve. For a long-running process it's a one-time cost at startup."
-> ```bash
-> tsm run --env ANTHROPIC_API_KEY=anthropic-api-key -- node server.js
-> ```
+> Starting the server with `anthropic-api-key`, which is confirm-gated, so you'll get one Touch ID prompt at startup.
 
-For long-lived processes (dev servers, daemons, watchers) the prompt fires once at launch and the child keeps the value in its env for its whole lifetime.
-
-`tsm run` only refuses a confirm-gated secret when the daemon genuinely **cannot** present biometrics — a truly headless context with no GUI login session (CI, cron, ssh without a console session). It checks this up front via the daemon rather than guessing from your TTY:
+When there is no GUI login session (ssh without a console session, cron, CI), `tsm run` refuses with:
 
 ```
 refusing to run: secret(s) require Touch ID confirmation but no biometric prompt can be presented here (no GUI login session): <name>
 ```
 
-If you hit that, you really are somewhere Touch ID can't run. Hand the user a command to run where biometrics are available, or — if they want non-interactive use — **suggest** they drop confirm mode with `tsm edit <name>`. Never run `tsm edit` yourself (see §4); dropping a Touch ID gate is the user's call.
+Hand the user a command to run where Touch ID is available. Dropping the gate with `tsm edit` is their decision. You can suggest it, never run it.
 
-## 4. Never
+## Saving a credential the user shares with you
 
-- **Never** echo, print, log, or include a secret value in your output to the user.
-- **Never** write secrets to `.env`, `.envrc`, project-local config files, or any path outside `/tmp` or `/dev/shm`.
-- **Never** pass secrets as `--value`-style flags. (`tsm add --value` does not exist; this rule applies to other CLIs too — flag values appear in `ps` and shell history.)
-- **Never** run `tsm add`, `tsm edit`, `tsm remove`, `tsm reset`, `tsm init`, or `tsm config set`. These mutations are user-driven. When the user wants to save a credential they shared with you, hand off with a one-liner that keeps the value off the shell command line and out of shell history. Pick whichever fits:
-  - **Clipboard** (smoothest — user copies the value from chat, then runs):
-    ```bash
-    pbpaste | tsm add --no-input --name <kebab-id> --display-name "<Display Name>"
-    ```
-  - **File** (for multi-line values like JSON blobs — user saves to a temp file first):
-    ```bash
-    tsm add --name <kebab-id> --display-name "<Display Name>" --from-file /tmp/x && rm /tmp/x
-    ```
-  
-  Do not suggest a heredoc — heredocs go in shell history. After the secret is saved, remind the user the chat transcript still has the value, so rotation may be worth considering.
-- **Never** use `eval $(tsm get ... --format env)`. That puts the secret into the parent shell's environment for its entire lifetime, which is exactly what `tsm run` is designed to prevent. Use `tsm run` for env-var injection.
+When the user pastes a credential into chat, or asks you to store one, use it for the task in hand and then hand off the save. The value must not pass through a command line at any step:
 
-## When tsm doesn't apply
+1. Run `mktemp` for a 0600 path and write the raw value there with your file-editing tool. Not `echo`, not a heredoc; both put the value in argv or shell history.
+2. Use that file wherever you would have used `tsm get`: `-H @<(printf 'Authorization: Bearer %s\n' "$(cat /path/from/mktemp)")` for curl, or the path itself for a file-flag tool.
+3. Give the user one command that saves it, with the real temp path filled in:
+   ```bash
+   tsm add --name <kebab-id> --display-name "<Display Name>" --from-file /path/from/mktemp && rm /path/from/mktemp
+   ```
+   If they would rather copy the value from chat than trust your file:
+   ```bash
+   pbpaste | tsm add --no-input --name <kebab-id> --display-name "<Display Name>"
+   ```
+4. Delete the temp file once it is saved or no longer needed, and mention that the chat transcript still holds the value, so rotating it is worth considering.
 
-- The user pastes a credential inline in chat — use it for the current task, then offer to save it via the `pbpaste`/`--from-file` handoff in §4 (do not suggest bare `tsm add`, which makes them retype the value into the TUI).
-- The tool uses local OAuth that owns its own token lifecycle (gcloud user-OAuth, GitHub CLI's `gh auth login` flow). Use the tool's native auth; tsm doesn't help here.
-- The vault is empty or no relevant secret exists — tell the user, suggest a name and `tsm add`, and stop there.
+## Never
+
+- Print, log, or quote a secret value in your reply. Not even a prefix.
+- Write a value into `.env`, `.envrc`, a project config file, or any path that is not a `mktemp` file.
+- `eval "$(tsm get x --format 'env X')"`. That plants the secret in the parent shell for its whole lifetime, which is exactly what `tsm run` exists to avoid.
+
+## When tsm is not the answer
+
+- The tool owns its own OAuth flow (`gcloud auth login`, `gh auth login`). Use that; the vault adds nothing.
+- No entry matches. Say so, propose a kebab-case name, and let the user run `tsm add`. Do not guess at a value.

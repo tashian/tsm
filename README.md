@@ -124,10 +124,10 @@ tsm get openai-api-key | pbcopy              # raw value to stdout, refuses to w
 tsm get openai-api-key --to-file /tmp/key    # mode 0600, no trailing newline
 ```
 
-Inline in a one-shot command — the secret never appears in shell history or `ps`:
+Inline in a one-shot command. curl reads headers from a file with `-H @file`, and `printf` is a shell builtin, so the secret never appears in shell history or in any process's `ps` arguments. (Expanding `$(tsm get …)` directly inside a `-H "Bearer …"` argument would put it in curl's argv.)
 
 ```bash
-curl -H "Authorization: Bearer $(tsm get openai-api-key)" \
+curl -H @<(printf 'Authorization: Bearer %s\n' "$(tsm get openai-api-key)") \
      https://api.openai.com/v1/models
 ```
 
@@ -147,7 +147,7 @@ For tools that read credentials from a specific wire format:
 ```bash
 tsm get aws-prod --format aws-credential-process > ~/.aws/credentials.json
 tsm get pg-prod  --format pgpass                 > ~/.pgpass
-tsm get gh-pat   --format "env GITHUB_TOKEN"     > /dev/shm/envfile
+tsm get gh-pat   --format "env GITHUB_TOKEN"     > "$ENVFILE"   # ENVFILE=$(mktemp); for docker --env-file
 ```
 
 `tsm get --format` refuses to write to a TTY; always redirect.
