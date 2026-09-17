@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 
@@ -32,8 +33,30 @@ private func secErrorMessage(_ status: OSStatus) -> String {
 }
 
 struct MacKeychain: KeychainProvider, Sendable {
+    static let legacyAccount = "master-key"
+
     let service = "com.tsm.vault"
-    let account = "master-key"
+    /// Keychain account for this vault's master key.
+    ///
+    /// The default vault path keeps the legacy fixed account so existing
+    /// installs are untouched. Any other path (e.g. a temp vault selected via
+    /// `XDG_DATA_HOME`) gets an account derived from the path, so initializing
+    /// a secondary vault can't overwrite the primary vault's key.
+    let account: String
+
+    init(vaultPath: URL = Paths.vaultFile) {
+        self.account = Self.account(forVaultPath: vaultPath)
+    }
+
+    static func account(forVaultPath path: URL) -> String {
+        let resolved = path.standardizedFileURL.path
+        if resolved == Paths.defaultVaultFile.standardizedFileURL.path {
+            return legacyAccount
+        }
+        let digest = SHA256.hash(data: Data(resolved.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return "\(legacyAccount):\(hex)"
+    }
 
     func storeMasterKey(_ key: Data) throws {
         try? deleteMasterKey()
