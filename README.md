@@ -158,6 +158,19 @@ tsm get gh-pat   --format "env GITHUB_TOKEN"     > "$ENVFILE"   # ENVFILE=$(mkte
 
 The shared surface between `tsm` and CI is the environment variable, and it is a clean one. A secret reaches your program through an env var; locally, `tsm run` fills that var from the vault, and in CI your CI system fills the same var from its own secret store (GitHub Actions secrets, and so on). Everything downstream of the env var is identical and never mentions `tsm`.
 
+## Using a temporary vault
+
+For experiments or tests, point tsm at a scratch location. Every path tsm uses is env-driven, and the CLI passes its environment through to the daemon it spawns:
+
+```bash
+export XDG_DATA_HOME=$(mktemp -d)
+export XDG_CONFIG_HOME=$XDG_DATA_HOME
+export TSM_AUTH_SOCK=$XDG_DATA_HOME/vault.sock
+tsm init
+```
+
+Each vault path gets its own Keychain entry for its master key, so initializing a scratch vault never touches your real one. Unset the variables (or close the shell) to go back to your primary vault; the scratch daemon exits on its own after its idle timeout.
+
 ## Build requirements
 
 - macOS with Touch ID (Apple Silicon recommended)

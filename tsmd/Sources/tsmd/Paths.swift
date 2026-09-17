@@ -33,6 +33,14 @@ enum Paths {
     }
 
     static var vaultFile: URL { dataDir.appendingPathComponent("vault.enc") }
+
+    /// The vault location when no XDG override is set. Used to decide whether
+    /// a vault is the user's primary vault (legacy Keychain account) or a
+    /// secondary one (per-path Keychain account).
+    static var defaultVaultFile: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/share/tsm/vault.enc")
+    }
     static var accessLog: URL { dataDir.appendingPathComponent("access.log") }
     static var configFile: URL { configDir.appendingPathComponent("config.json") }
 }
