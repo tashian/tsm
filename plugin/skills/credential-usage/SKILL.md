@@ -5,7 +5,7 @@ description: Use whenever a task needs an API key, token, password, database URL
 
 # Using credentials from the tsm vault
 
-`tsm` is a Touch ID-gated secrets vault on this Mac. The user installed this plugin so you pull credentials from it instead of asking, and so you handle them the way this skill describes. `tsm list`, `tsm get`, and `tsm run` are allowlisted for you. Every other `tsm` subcommand (`add`, `edit`, `remove`, `reset`, `init`, `config set`) changes the vault and is the user's to run.
+`tsm` is a Touch ID-gated secrets vault on this Mac. The user installed this plugin so you pull credentials from it instead of asking for them, and so you handle them the way this skill describes. `tsm list`, `tsm get`, `tsm run`, and `tsm status` are allowlisted for you. Every other `tsm` subcommand (`add`, `edit`, `remove`, `reset`, `init`, `config set`) changes the vault and is the user's to run.
 
 The first vault access in a session pops a system Touch ID dialog, and the command blocks until the user responds. That is normal. Do not kill or retry it. Later accesses inside the unlock window do not prompt.
 
@@ -16,9 +16,9 @@ The first vault access in a session pops a system Touch ID dialog, and the comma
    tsm list --json
    # [{"name":"gh-pat","display_name":"GitHub PAT","description":"...","confirm":false,"tags":["github","git"]}]
    ```
-   One match: use it. Several plausible matches: ask which. None: tell the user, suggest a name, and stop. Do not ask for the value unless nothing matches.
-2. **Pick the delivery pattern** for the tool (below). Prefer `tsm run` whenever the tool reads an environment variable.
-3. **If the entry has `"confirm": true`, warn before using it** (see "Confirm-gated secrets").
+   One match: use it. Several plausible matches: ask which. None: say so, propose a kebab-case name, and stop. Do not ask for the value while a match exists.
+2. **Pick the carrier** for the tool (below). Prefer `tsm run` whenever the tool reads an environment variable.
+3. **Do the task, then report the task.** The credential handling is yours to get right and not something the user needs to hear about. See "What to tell the user".
 
 ## The one rule: the value never lands in an argument list
 
@@ -45,7 +45,14 @@ tsm run --env A=key-a --env B=key-b -- ./deploy.sh prod
 Wrap the server command so it inherits the credential at startup:
 
 ```json
-{ "github": { "command": "tsm", "args": ["run", "--env", "GITHUB_TOKEN=gh-pat", "--", "github-mcp-server"] } }
+{
+  "mcpServers": {
+    "github": {
+      "command": "tsm",
+      "args": ["run", "--env", "GITHUB_PERSONAL_ACCESS_TOKEN=gh-pat", "--", "github-mcp-server"]
+    }
+  }
+}
 ```
 
 ### docker compose and docker run
@@ -108,9 +115,11 @@ Some tools dump their environment to a fixed project path on startup: a test har
 
 ## Confirm-gated secrets
 
-Entries with `"confirm": true` prompt Touch ID on every access, even inside the unlock window. The daemon presents the dialog in the user's GUI session, so it works from your non-TTY shell, but a dialog that appears with no explanation is alarming. Say what you are about to do and that a prompt will appear:
+Entries with `"confirm": true` prompt Touch ID on every access, even inside the unlock window. The daemon presents the dialog in the user's GUI session, so it works from your non-TTY shell. A dialog that appears with no explanation is alarming, so when you are about to run a command that uses one, say so in a line first:
 
-> Starting the server with `anthropic-api-key`, which is confirm-gated, so you'll get one Touch ID prompt at startup.
+> Running the migration now; you'll get a Touch ID prompt for `pg-prod`.
+
+That is the only time Touch ID belongs in your output. Do not mention it for entries that are not gated, and do not warn about prompts a command the user runs later might raise.
 
 When there is no GUI login session (ssh without a console session, cron, CI), `tsm run` refuses with:
 
@@ -124,7 +133,7 @@ Hand the user a command to run where Touch ID is available. Dropping the gate wi
 
 When the user pastes a credential into chat, or asks you to store one, use it for the task in hand and then hand off the save. The value must not pass through a command line at any step:
 
-1. Run `mktemp` for a 0600 path and write the raw value there with your file-editing tool. Not `echo`, not a heredoc; both put the value in argv or shell history.
+1. Run `mktemp` for a 0600 path and write the raw value there with your file-editing tool. Not `echo`, not `printf`, not a heredoc; all of those put the value in argv or shell history.
 2. Use that file wherever you would have used `tsm get`: `-H @<(printf 'Authorization: Bearer %s\n' "$(cat /path/from/mktemp)")` for curl, or the path itself for a file-flag tool.
 3. Give the user one command that saves it, with the real temp path filled in:
    ```bash
@@ -136,13 +145,41 @@ When the user pastes a credential into chat, or asks you to store one, use it fo
    ```
 4. Delete the temp file once it is saved or no longer needed, and mention that the chat transcript still holds the value, so rotating it is worth considering.
 
+If the user needs to supply a value you do not have (a missing entry), give them the `tsm add` line to run. Without `--from-file` it opens an interactive prompt that never touches argv.
+
+## What to tell the user
+
+The user trusts you to follow this skill. They do not need to be told that you did. A reply that explains the argv rule, environment scoping, what the value never touched, or which tsm subcommand you ran reads as padding at best and as a lecture at worst, and it buries the result they asked for.
+
+- **Lead with the result of the task.** The customers, the migration output, the file you changed.
+- **Name the entry in passing, in a few words, and say it came from tsm**, so the user can tell which credential was used and where it lives: "fetched with `stripe-live-sk` (tsm)", "as `app`, using the `pg-prod-password` tsm credential", "your tsm vault". Explain the choice only when there were several plausible matches, and then briefly: "your tsm vault's only GitHub entry" is enough; its description and scopes are not.
+- **Do not narrate commands.** "I checked the tsm vault" rather than "I ran `tsm list --json`".
+- **Do not explain the mechanics.** Nothing about argv, shell history, environment variables being scoped to the child, temp files, file descriptors, or the value never landing somewhere. Nothing about Touch ID beyond the one-line heads-up above.
+- **Show a command only when the command is the deliverable**: the `.mcp.json` block you wrote, a `tsm add` for a value the user has and you do not, a `tsm run` line for something they will run themselves later.
+
+Two examples, before and after:
+
+> Your vault has one GitHub entry, `gh-token` ("GitHub token", classic PAT with repo + read:org), so I used that. The token itself never appears in `.mcp.json`, so the file is safe to commit, and it isn't in any argv. The first start in a session will pop a Touch ID prompt; `gh-token` isn't confirm-gated, so later starts won't prompt again.
+
+becomes
+
+> Added the GitHub MCP server to `.mcp.json`, using your tsm vault's only GitHub entry, `gh-token`. Restart Claude Code to pick it up.
+
+and
+
+> How I got it: the vault has a `stripe-live-sk` entry, so I used that rather than asking you for the key. The `-H @<(...)` form hands curl the auth header through a file descriptor, so the key never appears in the command line or shell history.
+
+becomes
+
+> Here are the 5 most recent customers from the live Stripe account, fetched with `stripe-live-sk` (tsm):
+
 ## Never
 
 - Print, log, or quote a secret value in your reply. Not even a prefix.
 - Write a value into `.env`, `.envrc`, a project config file, or any path that is not a `mktemp` file.
 - `eval "$(tsm get x --format 'env X')"`. That plants the secret in the parent shell for its whole lifetime, which is exactly what `tsm run` exists to avoid.
+- Guess at a value. If no entry matches and the user has not given you one, stop and ask.
 
 ## When tsm is not the answer
 
-- The tool owns its own OAuth flow (`gcloud auth login`, `gh auth login`). Use that; the vault adds nothing.
-- No entry matches. Say so, propose a kebab-case name, and let the user run `tsm add`. Do not guess at a value.
+The tool owns its own OAuth flow (`gcloud auth login`, `gh auth login`). Use that; the vault adds nothing.

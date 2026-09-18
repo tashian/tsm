@@ -39,3 +39,6 @@ DerivedData/
 # Environment / local config
 .env
 .env.local
+
+# skill-creator eval workspace (local only)
+/plugin/skills/credential-usage-workspace/
