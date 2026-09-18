@@ -1,6 +1,6 @@
 {
   "name": "tsm",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Touch-ID-gated secrets for AI coding agents. Provides safe credential injection for tools and MCP servers.",
   "author": {
     "name": "Carl Tashian"
