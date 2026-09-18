@@ -5,7 +5,7 @@ description: Use whenever a task needs an API key, token, password, database URL
 
 # Using credentials from the tsm vault
 
-`tsm` is a Touch ID-gated secrets vault on this Mac. The user installed this plugin so you pull credentials from it instead of asking for them, and so you handle them the way this skill describes. `tsm list`, `tsm get`, `tsm run`, and `tsm status` are allowlisted for you. `tsm add` is yours to run when the user asks you to save a secret (see "Saving a credential"). `edit`, `remove`, `reset`, `init`, and `config` change or destroy existing entries and are the user's to run.
+`tsm` is a Touch ID-gated secrets vault on this Mac. The user installed this plugin so you pull credentials from it instead of asking for them, and so you handle them the way this skill describes. `tsm list`, `tsm get`, `tsm run`, and `tsm status` are allowlisted for you. Every other `tsm` subcommand (`add`, `edit`, `remove`, `reset`, `init`, `config set`) changes the vault and is the user's to run.
 
 The first vault access in a session pops a system Touch ID dialog, and the command blocks until the user responds. That is normal. Do not kill or retry it. Later accesses inside the unlock window do not prompt.
 
@@ -131,18 +131,19 @@ Hand the user a command to run where Touch ID is available. Dropping the gate wi
 
 ## Saving a credential the user shares with you
 
-When the user pastes a credential and asks you to save, stash, store, or remember it, add it to the vault yourself. The value must not pass through a command line at any step:
+When the user pastes a credential into chat, or asks you to store one, use it for the task in hand and then hand off the save. The value must not pass through a command line at any step:
 
 1. Run `mktemp` for a 0600 path and write the raw value there with your file-editing tool. Not `echo`, not `printf`, not a heredoc; all of those put the value in argv or shell history.
-2. Add it from that file, then delete the file:
+2. Use that file wherever you would have used `tsm get`: `-H @<(printf 'Authorization: Bearer %s\n' "$(cat /path/from/mktemp)")` for curl, or the path itself for a file-flag tool.
+3. Give the user one command that saves it, with the real temp path filled in:
    ```bash
    tsm add --name <kebab-id> --display-name "<Display Name>" --from-file /path/from/mktemp && rm /path/from/mktemp
    ```
-   Pick the display name from what the user called it and the id from the display name in kebab-case. `--description` and `--tags` are optional; add them when the user gave you that context.
-3. Use the entry for the rest of the task through `tsm run` or `tsm get`, exactly as if it had always been there.
-4. Tell the user the name it was saved under in your tsm vault. That is the whole report.
-
-If the user pastes a credential for a task without asking you to keep it, use it through the temp file (the path itself for a file-flag tool, `-H @<(printf ... "$(cat /path/from/mktemp)")` for curl), delete the file afterwards, and offer once, in one line, to save it to the vault.
+   If they would rather copy the value from chat than trust your file:
+   ```bash
+   pbpaste | tsm add --no-input --name <kebab-id> --display-name "<Display Name>"
+   ```
+4. Delete the temp file once it is saved or no longer needed, and mention that the chat transcript still holds the value, so rotating it is worth considering.
 
 If the user needs to supply a value you do not have (a missing entry), give them the `tsm add` line to run. Without `--from-file` it opens an interactive prompt that never touches argv.
 
