@@ -2,7 +2,7 @@
 
 Adds first-class tsm credential support to Claude Code:
 
-- **Permission allowlist** auto-approves read-only and lifecycle `tsm` commands so the agent does not prompt on every secret read.
+- **Permission allowlist** auto-approves read-only and lifecycle `tsm` commands, plus `tsm add`, so the agent does not prompt on every secret read or save. Commands that change or destroy existing entries (`edit`, `remove`, `reset`, `init`, `config`) still prompt.
 - **`credential-usage` skill** teaches the agent to discover credentials in the vault first and pick the safe retrieval pattern per tool category.
 
 The `tsm` CLI auto-spawns the `tsmd` daemon on first use, so no SessionStart hook is needed — the first agent call (typically `tsm list --json`) brings it up transparently.
