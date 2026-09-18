@@ -81,3 +81,32 @@ jobs:
       - name: Publish @tashian/tsm
         working-directory: npm/wrapper
         run: npm publish --provenance --access public
+
+      # The Claude Code plugin is installed straight from this git repo, not
+      # from a registry, and `claude plugin update` only refreshes when the
+      # manifest version changes. So unlike the npm bumps above (which live
+      # only in the runner's working tree), this one has to be committed to
+      # main. Runs last so a failed publish doesn't leave a bump pointing at
+      # a release that doesn't exist. Pushes made with GITHUB_TOKEN don't
+      # trigger other workflows, so this can't loop.
+      - name: Bump plugin version on main
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+          jq --arg v "$VERSION" '.version = $v' \
+            plugin/.claude-plugin/plugin.json > plugin/.claude-plugin/plugin.json.tmp
+          mv plugin/.claude-plugin/plugin.json.tmp plugin/.claude-plugin/plugin.json
+          jq --arg v "$VERSION" '(.plugins[] | select(.name == "tsm") | .version) = $v' \
+            .claude-plugin/marketplace.json > .claude-plugin/marketplace.json.tmp
+          mv .claude-plugin/marketplace.json.tmp .claude-plugin/marketplace.json
+          if git diff --quiet; then
+            echo "plugin already at $VERSION; nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugin/.claude-plugin/plugin.json .claude-plugin/marketplace.json
+          git commit -m "chore(plugin): bump plugin version to $VERSION"
+          git push origin main
