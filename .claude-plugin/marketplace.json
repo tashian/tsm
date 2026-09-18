@@ -12,7 +12,7 @@
       "name": "tsm",
       "source": "./plugin",
       "description": "Touch-ID-gated secrets manager for AI coding agents on macOS.",
-      "version": "0.1.0"
+      "version": "0.1.12"
     }
   ]
 }

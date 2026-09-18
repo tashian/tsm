@@ -56,6 +56,7 @@ Then watch it: `gh run watch <run-id> --exit-status`. The whole job takes ~1–2
 
 - **Versioning.** v0.1.x patch-bump cadence; the next tag after `vN` is the obvious increment. Bump `main` only via merged PRs first — tag the merge commit, never a feature branch.
 - **Don't hand-edit npm versions.** `npm/wrapper/package.json` and `npm/darwin-arm64/package.json` stay `0.0.0` in the repo; the workflow rewrites both (and the wrapper's `optionalDependencies` pin) from the tag via `jq` at publish time.
+- **Don't hand-edit the plugin version either.** After publishing, the workflow bumps `plugin/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` to the tag version and commits that to `main` as `github-actions[bot]`. This one *has* to be committed (unlike the npm bumps) because Claude Code installs the plugin straight from the git repo and `claude plugin update` only refreshes when the manifest version changes. Expect one bot commit on `main` after every release; pull before branching.
 - **Publish order is load-bearing.** Platform package (`@tashian/tsm-darwin-arm64`) publishes *before* the wrapper (`@tashian/tsm`) so the wrapper's `optionalDependencies` resolve. The workflow already orders them; don't reorder.
 - **npm Trusted Publishing.** Auth is OIDC (no token), which needs Node 24 / npm 11. Node 22's npm 10 silently publishes unauthenticated and 404s — don't downgrade the `setup-node` version.
 - **Irreversible.** A published npm version can't be re-published. Confirm the version before pushing the tag.
