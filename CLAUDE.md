@@ -21,44 +21,27 @@ internal/
 tsmd/                  # SwiftPM package (the daemon)
   Sources/tsmd/        # one .swift file per concern
   Tests/tsmdTests/     # XCTest, ~83 tests
-docs/plans/            # design + implementation plans (read these first)
 ```
 
 ## Build & test
 
 ```bash
-# Daemon (Swift, run from tsmd/)
-cd tsmd && swift test
-cd tsmd && swift build -c release
-cp tsmd/.build/release/tsmd ~/.local/bin/tsmd
-
-# CLI (Go, run from repo root)
-go test ./...
-go build -o ~/.local/bin/tsm .
-
-# Stop a running daemon before reinstalling so pgrep + kill, e.g.:
-pgrep -fl "/.local/bin/tsmd" | awk '{print $1}' | xargs -r kill
+just test                 # go test ./... + swift test (tsmd/)
+just build                # both binaries → dist/bin/
+cp dist/bin/tsm dist/bin/tsmd ~/.local/bin/
+pgrep -fl "/.local/bin/tsmd" | awk '{print $1}' | xargs -r kill   # stop the old daemon before reinstalling
 ```
 
 The daemon must be ad-hoc signed (Apple Silicon requirement). `swift build` does this automatically. Do **not** run `codesign --remove-signature` on the binary.
 
 ## Releasing
 
-Releases are **tag-driven**. Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml` (on a `macos-15` runner), which builds the binaries, creates the GitHub release (tarball + `checksums.txt`, auto-generated notes), and publishes both npm packages.
+Tag-driven: `git tag -a vX.Y.Z && git push origin vX.Y.Z` triggers `.github/workflows/release.yml`. Full procedure and one-time setup are in `RELEASING.md` — read it before cutting a release. Rules that are easy to get wrong:
 
-To cut a release: make sure `main` is green and synced, then
-
-```bash
-git tag -a v0.1.11 -m "v0.1.11 ..." && git push origin v0.1.11
-```
-
-Then watch it: `gh run watch <run-id> --exit-status`. The whole job takes ~1–2 min.
-
-- **Versioning.** v0.1.x patch-bump cadence; the next tag after `vN` is the obvious increment. Bump `main` only via merged PRs first — tag the merge commit, never a feature branch.
-- **Don't hand-edit npm versions.** `npm/wrapper/package.json` and `npm/darwin-arm64/package.json` stay `0.0.0` in the repo; the workflow rewrites both (and the wrapper's `optionalDependencies` pin) from the tag via `jq` at publish time.
-- **Don't hand-edit the plugin version either.** After publishing, the workflow bumps `plugin/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` to the tag version and commits that to `main` as `github-actions[bot]`. This one *has* to be committed (unlike the npm bumps) because Claude Code installs the plugin straight from the git repo and `claude plugin update` only refreshes when the manifest version changes. Expect one bot commit on `main` after every release; pull before branching.
-- **Publish order is load-bearing.** Platform package (`@tashian/tsm-darwin-arm64`) publishes *before* the wrapper (`@tashian/tsm`) so the wrapper's `optionalDependencies` resolve. The workflow already orders them; don't reorder.
-- **npm Trusted Publishing.** Auth is OIDC (no token), which needs Node 24 / npm 11. Node 22's npm 10 silently publishes unauthenticated and 404s — don't downgrade the `setup-node` version.
+- Tag the merge commit on `main`, never a feature branch. Expect one `github-actions[bot]` commit on `main` after every release (plugin version bump); pull before branching.
+- **Don't hand-edit versions.** `npm/*/package.json` stay `0.0.0` (workflow rewrites from the tag at publish time). `plugin/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` are bumped and committed by the workflow — that one has to land in git because `claude plugin update` only refreshes when the manifest version changes.
+- **Publish order is load-bearing.** `@tashian/tsm-darwin-arm64` publishes before the wrapper `@tashian/tsm` so `optionalDependencies` resolve. Don't reorder.
+- **npm Trusted Publishing needs Node 24 / npm 11.** Node 22's npm 10 silently publishes unauthenticated and 404s — don't downgrade `setup-node`.
 - **Irreversible.** A published npm version can't be re-published. Confirm the version before pushing the tag.
 
 ## Architecture
@@ -91,24 +74,13 @@ Backward-compatible JSON. `Secret.displayName` has a custom decoder defaulting t
 - **No `--value` flag on `tsm add`.** Secrets must come from TUI, stdin, or `--from-file`. Flag values would leak into shell history and `/proc/<pid>/cmdline`.
 - **JSON-RPC keys are snake_case** (`display_name`, `ttl_remaining_seconds`). Swift uses `CodingKeys` to map; Go uses struct tags.
 - **One responsibility per file.** Each `cmd/*.go` and `tsmd/Sources/tsmd/*.swift` does one thing.
-- **Frequent commits.** Each task in the plans is one commit. Commit messages use Conventional Commits (`feat(tsm):`, `feat(tsmd):`, `fix(tsmd):`, `docs(plans):`, etc.).
+- **Frequent commits.** Commit messages use Conventional Commits (`feat(tsm):`, `feat(tsmd):`, `fix(tsmd):`, etc.).
 - **Plugin skill stays in sync with the CLI.** PRs that change `tsm` flags, command names, or output shapes must update `plugin/skills/credential-usage/SKILL.md` in the same commit. The skill is what the agent reads to figure out how to use tsm; stale skill text is worse than no skill.
-
-## Plans (read before making non-trivial changes)
-
-All plans live in `docs/plans/` as `YYYY-MM-DD-<feature-name>.md`. Don't create plans elsewhere (no `docs/superpowers/`, no top-level `PLAN.md`). Design and implementation plans for the same feature share a date prefix and use `-design.md` / `-impl.md` (or `-plan.md`) suffixes.
-
-- `docs/plans/2026-03-08-tsm-design.md` — overall design spec, threat model, MCP interface.
-- `docs/plans/2026-03-21-tsmd-implementation.md` — daemon plan; **Addendum** at the bottom covers the `display_name` field.
-- `docs/plans/2026-03-22-tsm-cli-implementation.md` — CLI plan; **Addendum** covers display-name UX, kebab-case helper, and huh validation. Also has a "Known Gaps & Daemon Dependencies" section worth scanning.
-- `docs/plans/2026-04-25-tsm-agent-integration-design.md` — Plan 3 design (agent integration via `tsm run`, `tsm get --format`, and the Claude Code plugin). Drops the previously-planned `tsm mcp` and `tsm schema` in favor of the existing CLI surface.
-- `docs/plans/2026-04-25-tsm-agent-integration-impl.md` — Plan 3 implementation tasks.
-- `docs/plans/2026-04-26-vault-hardening-design.md` / `-plan.md` — TTL semantics and per-session unlock hardening.
 
 ## Quick gotchas
 
 - **TTL config lives only in the daemon vault.** `tsm config set ttl 30m` calls the `vault.config.set` RPC, which re-encrypts and persists the embedded `ttl_seconds`. There is no CLI-side TTL value. Changes apply on the next operation that consults TTL (effectively immediately). The CLI accepts and prints Go duration strings (`30m`, `1h30m`); the wire/storage key remains `ttl_seconds`.
 - **Vault is per-session unlocked.** The daemon tracks unlock state in a `[pid_t: Date]` map keyed by a *durable* session id derived from the connecting peer (`LOCAL_PEERPID` + `getsid`, then `PeerSession.resolveDurableSessionID` walks up the session-leader chain past any `setsid()`-spawned ephemeral sessions, stopping when the next ancestor lives in sid=1). This collapses every command an agent harness like Claude Code's Bash tool spawns into one shared session, while keeping distinct terminal tabs / ssh sessions / iTerm windows isolated. Each session unlocks independently; locking one session doesn't disturb others. The master key is zeroed when the last session is removed. Auto-lock fires on screen lock and system sleep via `SystemEvents`.
 - **Temp / secondary vaults.** Both halves honor `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, and `TSM_AUTH_SOCK`, and the CLI passes its environment through to the daemon it spawns. The master key's Keychain account is derived from the vault path (`MacKeychain.account(forVaultPath:)`): the default `~/.local/share/tsm/vault.enc` keeps the legacy `master-key` account so existing installs are untouched; any other path gets `master-key:<sha256 of path>`. So a throwaway vault under a temp `XDG_DATA_HOME` can be `tsm init`'d without clobbering the real vault's key. Keying is by path, so moving a non-default vault file strands its key (recover via passphrase). `tsm` has no `--vault` flag; use the env vars.
-- **`vault.unlock` with passphrase doesn't re-store the key.** Recovery on a new device decrypts but doesn't update the Keychain entry yet (see Plan 2 Known Gaps #1).
+- **`vault.unlock` with passphrase doesn't re-store the key.** Recovery on a new device decrypts but doesn't update the Keychain entry yet.
 - **`tsm get` to a TTY is rejected.** Default output is the raw value with no framing; the command refuses to write secret values to a terminal — pipe, redirect, or use `--to-file`.
