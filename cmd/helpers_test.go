@@ -41,10 +41,10 @@ func TestPrintJSON(t *testing.T) {
 func TestFormatError_AuthUnavailable_DoesNotAskForTouchID(t *testing.T) {
 	err := &jsonrpc.RPCError{
 		Code:    jsonrpc.CodeAuthUnavailable,
-		Message: "Touch ID is not available: Touch ID is not available in closed clamshell mode.",
+		Message: "No fingerprints are enrolled for Touch ID. Add one in System Settings > Touch ID & Password.",
 	}
 	msg := formatRPCError(err)
-	if !strings.Contains(msg, "closed clamshell mode") {
+	if !strings.Contains(msg, "No fingerprints are enrolled") {
 		t.Errorf("expected daemon's reason in message, got %q", msg)
 	}
 	if strings.Contains(msg, "Authenticate via Touch ID to proceed") {
@@ -52,5 +52,10 @@ func TestFormatError_AuthUnavailable_DoesNotAskForTouchID(t *testing.T) {
 	}
 	if !strings.Contains(msg, "No Touch ID prompt was shown") {
 		t.Errorf("expected guidance that no prompt was shown, got %q", msg)
+	}
+	// The daemon's reason carries the fix; a fixed lid/keyboard hint would be
+	// wrong for lockout or enrollment causes.
+	if strings.Contains(msg, "lid") || strings.Contains(msg, "keyboard") {
+		t.Errorf("CLI must not add a cause-specific hint: %q", msg)
 	}
 }

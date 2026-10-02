@@ -34,9 +34,12 @@ struct TouchIDAuth: AuthProvider, Sendable {
     }
 
     /// Human-readable cause for a failed `canEvaluatePolicy`. macOS often puts
-    /// the real cause only in the debug description — with the lid closed it
+    /// the real cause only in the debug description. When a Magic Keyboard
+    /// with Touch ID loses its pairing with a Mac whose lid is closed, macOS
     /// returns `systemCancel` ("Authentication canceled.") and the debug text
-    /// "Touch ID is not available in closed clamshell mode."
+    /// "Touch ID is not available in closed clamshell mode." That text names
+    /// the lid, but a paired keyboard works with the lid closed; connecting
+    /// the keyboard with a USB cable pairs it again.
     static func unavailableReason(_ error: NSError?) -> String {
         guard let error else { return "Touch ID is not available." }
         if error.domain == LAErrorDomain {
@@ -55,6 +58,11 @@ struct TouchIDAuth: AuthProvider, Sendable {
         }
         let detail = (error.userInfo[NSDebugDescriptionErrorKey] as? String)
             ?? error.localizedDescription
+        if detail.contains("clamshell") {
+            return "\(detail) If you use a Magic Keyboard with Touch ID, it may have "
+                + "lost its pairing with this Mac. Connect it with a USB cable to pair it again."
+        }
+        if detail.hasPrefix("Touch ID") { return detail }
         return "Touch ID is not available: \(detail)"
     }
 }

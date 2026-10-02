@@ -87,14 +87,14 @@ final class JSONRPCHandlerTests: XCTestCase {
     func testUnlockWhenTouchIDUnavailableReturnsAuthUnavailableWithReason() async {
         _ = await handler.handle(makeRequest(method: "vault.init"), sessionID: sid)
         await vault.lockAll()
-        auth.unavailableReason = "Touch ID is not available: Touch ID is not available in closed clamshell mode."
+        auth.unavailableReason = "Touch ID is not available in closed clamshell mode."
 
         let resp = await handler.handle(makeRequest(method: "vault.unlock"), sessionID: sid)
 
         XCTAssertEqual(resp.error?.code, RPCErrorCode.authUnavailable,
             "an unavailable sensor must not look like a failed or pending Touch ID check")
         XCTAssertEqual(resp.error?.message,
-            "Touch ID is not available: Touch ID is not available in closed clamshell mode.")
+            "Touch ID is not available in closed clamshell mode.")
     }
 
     func testUnlockWhenTouchIDFailsStillReturnsAuthRequired() async {

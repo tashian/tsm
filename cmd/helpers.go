@@ -77,7 +77,7 @@ func formatRPCError(err *jsonrpc.RPCError) string {
 	case jsonrpc.CodeSecretNotFound:
 		return fmt.Sprintf("%s\nRun 'tsm list' to see available secrets.", err.Message)
 	case jsonrpc.CodeAuthUnavailable:
-		return fmt.Sprintf("%s\nNo Touch ID prompt was shown. Make Touch ID available (for example, open the lid or connect a Touch ID keyboard), then try again.", err.Message)
+		return fmt.Sprintf("%s\nNo Touch ID prompt was shown. Fix the cause above, then try again.", err.Message)
 	default:
 		return err.Message
 	}

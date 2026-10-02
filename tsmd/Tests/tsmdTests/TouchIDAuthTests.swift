@@ -12,13 +12,23 @@ final class TouchIDAuthTests: XCTestCase {
         return NSError(domain: LAErrorDomain, code: code.rawValue, userInfo: info)
     }
 
-    func testClamshellReasonIsReported() {
-        // What macOS returns from canEvaluatePolicy with the lid closed and no
-        // Touch ID keyboard: systemCancel, with the cause only in the debug text.
+    func testClamshellReasonPointsAtKeyboardPairing() {
+        // What macOS returns from canEvaluatePolicy with the lid closed when the
+        // Magic Keyboard with Touch ID has lost its pairing with this Mac:
+        // systemCancel, with only the lid named in the debug text. A paired
+        // keyboard works with the lid closed, so the fix is to pair it again.
         let reason = TouchIDAuth.unavailableReason(
             laError(.systemCancel, debug: "Touch ID is not available in closed clamshell mode."))
-        XCTAssertEqual(reason,
-            "Touch ID is not available: Touch ID is not available in closed clamshell mode.")
+        XCTAssertTrue(reason.hasPrefix("Touch ID is not available in closed clamshell mode."), reason)
+        XCTAssertTrue(reason.contains("USB cable"), reason)
+        XCTAssertFalse(reason.contains("not available: Touch ID is not available"),
+            "don't repeat macOS's own prefix: \(reason)")
+    }
+
+    func testDebugTextIsPrefixedWhenItDoesNotNameTouchID() {
+        let reason = TouchIDAuth.unavailableReason(
+            laError(.systemCancel, debug: "No console session."))
+        XCTAssertEqual(reason, "Touch ID is not available: No console session.")
     }
 
     func testLockoutReasonTellsUserToUsePassword() {

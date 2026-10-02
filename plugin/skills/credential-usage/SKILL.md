@@ -62,7 +62,7 @@ Entries with `"confirm": true` prompt Touch ID on every access, even inside the 
 
 With no GUI login session (ssh without a console session, cron, CI), `tsm run` refuses and names the secret. Hand the user a command to run where Touch ID is available; dropping the gate with `tsm edit` is their call.
 
-An error that starts "Touch ID is not available" (JSON code `-32004`) means no prompt was shown: the lid is closed with no Touch ID keyboard, Touch ID is locked out, or no finger is enrolled. Retrying fails the same way. Tell the user the reason in one line and wait for them to fix it.
+"No Touch ID prompt was shown" in an error (JSON code `-32004`) means macOS refused to show one. The causes: a Magic Keyboard with Touch ID lost its pairing while the lid is closed (macOS blames the lid; a USB cable pairs it again), Touch ID is locked out, or no finger is enrolled. Retrying fails the same way. Tell the user the reason in one line and wait for them to fix it.
 
 ## A credential the user pastes into chat
 
