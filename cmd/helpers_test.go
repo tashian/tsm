@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"tsm/internal/jsonrpc"
@@ -34,5 +35,22 @@ func TestPrintJSON(t *testing.T) {
 	var decoded map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
 		t.Fatalf("output is not valid JSON: %s", buf.String())
+	}
+}
+
+func TestFormatError_AuthUnavailable_DoesNotAskForTouchID(t *testing.T) {
+	err := &jsonrpc.RPCError{
+		Code:    jsonrpc.CodeAuthUnavailable,
+		Message: "Touch ID is not available: Touch ID is not available in closed clamshell mode.",
+	}
+	msg := formatRPCError(err)
+	if !strings.Contains(msg, "closed clamshell mode") {
+		t.Errorf("expected daemon's reason in message, got %q", msg)
+	}
+	if strings.Contains(msg, "Authenticate via Touch ID to proceed") {
+		t.Errorf("no prompt was shown; message must not ask for Touch ID: %q", msg)
+	}
+	if !strings.Contains(msg, "No Touch ID prompt was shown") {
+		t.Errorf("expected guidance that no prompt was shown, got %q", msg)
 	}
 }

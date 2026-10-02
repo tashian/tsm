@@ -164,6 +164,12 @@ actor JSONRPCHandler {
                 message: "Authentication required",
                 data: ["auth_method": .string("touchid")]
             )
+        case .authUnavailable(let reason):
+            return JSONRPCError(
+                code: RPCErrorCode.authUnavailable,
+                message: reason,
+                data: ["auth_method": .string("touchid")]
+            )
         case .secretNotFound(let name):
             return JSONRPCError(
                 code: RPCErrorCode.secretNotFound,

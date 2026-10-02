@@ -62,9 +62,13 @@ final class MockAuth: AuthProvider, @unchecked Sendable {
     var shouldFail = false
     var authenticateCalled = false
     var canAuthenticateResult = true
+    /// When set, authenticate() throws authUnavailable with this reason, as
+    /// TouchIDAuth does when LAContext refuses to evaluate the policy.
+    var unavailableReason: String?
 
     func authenticate(reason: String) async throws {
         authenticateCalled = true
+        if let unavailable = unavailableReason { throw VaultError.authUnavailable(unavailable) }
         if shouldFail { throw VaultError.authFailed }
     }
 

@@ -82,6 +82,31 @@ final class JSONRPCHandlerTests: XCTestCase {
             "auth.can_confirm must reflect the daemon's biometric presentability, not the caller's TTY")
     }
 
+    // MARK: - Touch ID unavailable
+
+    func testUnlockWhenTouchIDUnavailableReturnsAuthUnavailableWithReason() async {
+        _ = await handler.handle(makeRequest(method: "vault.init"), sessionID: sid)
+        await vault.lockAll()
+        auth.unavailableReason = "Touch ID is not available: Touch ID is not available in closed clamshell mode."
+
+        let resp = await handler.handle(makeRequest(method: "vault.unlock"), sessionID: sid)
+
+        XCTAssertEqual(resp.error?.code, RPCErrorCode.authUnavailable,
+            "an unavailable sensor must not look like a failed or pending Touch ID check")
+        XCTAssertEqual(resp.error?.message,
+            "Touch ID is not available: Touch ID is not available in closed clamshell mode.")
+    }
+
+    func testUnlockWhenTouchIDFailsStillReturnsAuthRequired() async {
+        _ = await handler.handle(makeRequest(method: "vault.init"), sessionID: sid)
+        await vault.lockAll()
+        auth.shouldFail = true
+
+        let resp = await handler.handle(makeRequest(method: "vault.unlock"), sessionID: sid)
+
+        XCTAssertEqual(resp.error?.code, RPCErrorCode.authRequired)
+    }
+
     // MARK: - CRUD
 
     func testVaultAddAndGet() async {
