@@ -33,10 +33,6 @@ The skill tells Claude not to put secret values in the conversation. Data that y
 
 The data stays on your Mac until you delete it. To delete all tsm data, delete the `~/.local/share/tsm` directory and the `com.tsm.vault` items in the macOS Keychain.
 
-## Children
-
-tsm is not intended for persons under 18.
-
 ## Changes
 
 Changes to this policy are recorded in the Git history of this file.
