@@ -1,5 +1,6 @@
 {
   "name": "tsm",
+  "displayName": "tsm: Tiny Secrets Manager",
   "version": "0.1.14",
   "description": "Touch-ID-gated secrets for AI coding agents. Provides safe credential injection for tools and MCP servers.",
   "author": {

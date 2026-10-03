@@ -32,3 +32,7 @@ The marketplace is registered at the repository root (`.claude-plugin/marketplac
 - `tsm` CLI installed and on `PATH` (see the top-level repo README).
 - A vault initialized with `tsm init`.
 - macOS with Touch ID.
+
+## Credits
+
+The plugin icon uses the `fingerprint` glyph from [Material Design Icons](https://github.com/google/material-design-icons) by Google, under the Apache License 2.0.
