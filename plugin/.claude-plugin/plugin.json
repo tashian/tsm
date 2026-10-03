@@ -14,5 +14,9 @@
     "credentials",
     "macos",
     "touch-id"
-  ]
+  ],
+  "homepage": "https://github.com/tashian/tsm",
+  "documentationUrl": "https://github.com/tashian/tsm#readme",
+  "supportUrl": "https://github.com/tashian/tsm/issues",
+  "privacyPolicyUrl": "https://github.com/tashian/tsm/blob/main/PRIVACY.md"
 }
