@@ -1,5 +1,7 @@
 # tsm Claude Code plugin
 
+> **Requirements:** Claude Code on macOS (Apple Silicon) with Touch ID, and the `tsm` CLI. Install the CLI first with `npm install -g @tashian/tsm`, then run `tsm init`. The plugin does not work in Cowork or the Claude apps, or on Linux or Windows.
+
 Adds first-class tsm credential support to Claude Code:
 
 - **Permission allowlist** auto-approves read-only and lifecycle `tsm` commands so the agent does not prompt on every secret read.
