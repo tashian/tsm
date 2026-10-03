@@ -82,5 +82,6 @@ final class JSONRPCTypesTests: XCTestCase {
         XCTAssertEqual(RPCErrorCode.vaultLocked, -32001)
         XCTAssertEqual(RPCErrorCode.authRequired, -32002)
         XCTAssertEqual(RPCErrorCode.secretNotFound, -32003)
+        XCTAssertEqual(RPCErrorCode.authUnavailable, -32004)
     }
 }

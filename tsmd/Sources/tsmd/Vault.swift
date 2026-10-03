@@ -10,6 +10,10 @@ enum VaultError: Error, Equatable {
     case secretAlreadyExists(String)
     case authRequired
     case authFailed
+    /// Touch ID could not be presented at all (lid closed, locked out, not
+    /// enrolled...). Carries the reason. Distinct from authFailed, where a
+    /// prompt was shown and the user failed or canceled it.
+    case authUnavailable(String)
     case invalidName(String)
     case invalidConfig(String)   // NEW
 }

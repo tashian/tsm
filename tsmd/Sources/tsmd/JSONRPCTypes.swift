@@ -122,4 +122,5 @@ enum RPCErrorCode {
     static let vaultLocked = -32001
     static let authRequired = -32002
     static let secretNotFound = -32003
+    static let authUnavailable = -32004
 }
