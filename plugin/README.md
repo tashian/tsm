@@ -4,7 +4,7 @@
 
 Adds first-class tsm credential support to Claude Code:
 
-- **Permission allowlist** auto-approves read-only and lifecycle `tsm` commands so the agent does not prompt on every secret read.
+- **Permission allowlist** auto-approves `tsm list`, `get`, `status`, `log`, `lock`, and `unlock` so the agent does not prompt on every secret read. Touch ID still gates the first vault access in each session. `tsm run` is not on the list, because it runs the command after `--`: Claude Code asks you to approve each `tsm run` and shows that command.
 - **`credential-usage` skill** teaches the agent to discover credentials in the vault first and pick the safe retrieval pattern per tool category.
 
 The `tsm` CLI auto-spawns the `tsmd` daemon on first use, so no SessionStart hook is needed — the first agent call (typically `tsm list --json`) brings it up transparently.

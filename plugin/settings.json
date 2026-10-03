@@ -6,7 +6,6 @@
       "Bash(tsm status)",
       "Bash(tsm status:*)",
       "Bash(tsm get:*)",
-      "Bash(tsm run:*)",
       "Bash(tsm log)",
       "Bash(tsm log:*)",
       "Bash(tsm lock)",

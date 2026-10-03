@@ -64,7 +64,7 @@ Install the bundled plugin to give Claude Code first-class tsm support. This rep
 ```
 
 The plugin:
-- Auto-approves read-only and lifecycle `tsm` commands (`list`, `get`, `run`, `status`, `log`, `lock`, `unlock`) so the agent does not prompt on every read.
+- Auto-approves `tsm list`, `get`, `status`, `log`, `lock`, and `unlock` so the agent does not prompt on every read. `tsm run` is not auto-approved, because it runs the command after `--`; Claude Code asks you to approve each one.
 - Ships an opinionated `credential-usage` skill that teaches the agent to discover credentials in the vault before asking the user.
 
 The `tsm` CLI auto-spawns the daemon on first use, so no SessionStart hook is needed.

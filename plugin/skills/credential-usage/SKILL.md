@@ -5,7 +5,7 @@ description: Use whenever a task needs an API key, token, password, database URL
 
 # Using credentials from the tsm vault
 
-`tsm` is a Touch ID-gated secrets vault on this Mac. The user installed this plugin so you pull credentials from it instead of asking for them. `tsm list`, `tsm get`, `tsm run`, and `tsm status` are allowlisted for you; every other subcommand (`add`, `edit`, `remove`, `reset`, `init`, `config set`) changes the vault and is the user's to run. The first vault access in a session blocks on a system Touch ID dialog until the user responds. Do not kill or retry it.
+`tsm` is a Touch ID-gated secrets vault on this Mac. The user installed this plugin so you pull credentials from it instead of asking for them. `tsm list`, `tsm get`, and `tsm status` are allowlisted for you. `tsm run` is not, because it runs whatever command follows `--`, so the user approves each one; every other subcommand (`add`, `edit`, `remove`, `reset`, `init`, `config set`) changes the vault and is the user's to run. The first vault access in a session blocks on a system Touch ID dialog until the user responds. Do not kill or retry it.
 
 ## Workflow
 
