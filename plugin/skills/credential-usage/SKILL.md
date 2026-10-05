@@ -9,7 +9,7 @@ description: Use whenever a task needs an API key, token, password, database URL
 
 ## Workflow
 
-1. **Look before asking.** `tsm list --json` returns names, display names, descriptions, tags, and the `confirm` flag, never values. Match on any of them. One match: use it. Several plausible: ask which. None: say so, propose a kebab-case name, and stop. Do not ask for a value while a match exists.
+1. **Look before asking.** `tsm list <term>... --json` lists the entries where any term appears in the name, display name, description, or a tag, ignoring case. Pass the service and its synonyms (`tsm list aws amazon --json`) rather than filtering the full list yourself. The output is one JSON array with one entry per line, each `{"name", "display_name", "description", "confirm", "tags"}`, never values. One match: use it. Several plausible: ask which. None (`[]`): say so, propose a kebab-case name, and stop. Do not ask for a value while a match exists. If a command fails, stdout is empty, the exit code is 1, and with `--json` stderr holds `{"error": {"code", "name", "message"}}`; `name` is `auth_required`, `auth_unavailable`, `vault_locked`, or `secret_not_found`.
 2. **Pick the carrier** for the tool (below). Prefer `tsm run` whenever the tool reads an environment variable.
 3. **Do the task, then report the task**, not the credential handling (see "What to tell the user").
 
@@ -62,7 +62,7 @@ Entries with `"confirm": true` prompt Touch ID on every access, even inside the 
 
 With no GUI login session (ssh without a console session, cron, CI), `tsm run` refuses and names the secret. Hand the user a command to run where Touch ID is available; dropping the gate with `tsm edit` is their call.
 
-"No Touch ID prompt was shown" in an error (JSON code `-32004`) means macOS refused to show one. The causes: a Magic Keyboard with Touch ID lost its pairing while the lid is closed (macOS blames the lid; a USB cable pairs it again), Touch ID is locked out, or no finger is enrolled. Retrying fails the same way. Tell the user the reason in one line and wait for them to fix it.
+"No Touch ID prompt was shown" in an error (JSON name `auth_unavailable`) means macOS refused to show one. The causes: a Magic Keyboard with Touch ID lost its pairing while the lid is closed (macOS blames the lid; a USB cable pairs it again), Touch ID is locked out, or no finger is enrolled. Retrying fails the same way. Tell the user the reason in one line and wait for them to fix it.
 
 ## A credential the user pastes into chat
 

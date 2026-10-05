@@ -117,6 +117,26 @@ $ tsm list
 
 The display name is shown first; the kebab-case id (used for `tsm get`, env var derivation, and audit logs) is on the line beneath. Run `tsm add` with no flags to use the interactive TUI instead — it'll prompt for the display name and show a live "stored as: …" preview as you type.
 
+To search, give one or more terms. `tsm list` shows the secrets where any term appears in the id, display name, description, or a tag (case-insensitive):
+
+```bash
+$ tsm list github openai --json
+[
+{"name":"openai-api-key","display_name":"OpenAI API key","description":"Production GPT-4 key","confirm":true,"tags":["openai","prod"]},
+{"name":"github-pat","display_name":"GitHub PAT","description":"Read-only token for private repos","confirm":false,"tags":["github"]}
+]
+```
+
+### JSON output
+
+`--json` output is indented in a terminal. When stdout is a pipe or file, it is compact, and an array has one element per line, so `| head` shows whole entries. If a command fails, stdout is empty, the exit code is 1, and stderr holds the error. With `--json` the error is JSON:
+
+```json
+{"error":{"code":-32002,"name":"auth_required","message":"Authentication required"}}
+```
+
+`name` is one of `vault_locked`, `auth_required`, `secret_not_found`, `auth_unavailable`, or a JSON-RPC protocol error. Errors that do not come from the daemon have only `message`.
+
 ### Retrieving
 
 ```bash
