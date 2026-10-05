@@ -37,10 +37,13 @@ func runStatus(c client.Caller, stdout io.Writer) error {
 
 	if jsonOutput() {
 		out := map[string]any{
-			"version":      Version,
-			"vault_path":   vaultPath,
-			"locked":       s.Locked,
-			"secret_count": s.SecretCount,
+			"version":    Version,
+			"vault_path": vaultPath,
+			"locked":     s.Locked,
+		}
+		// The daemon reports 0 while locked; leave the count out until it is real.
+		if !s.Locked {
+			out["secret_count"] = s.SecretCount
 		}
 		if s.TTLRemainingSeconds != nil {
 			out["ttl_remaining_seconds"] = *s.TTLRemainingSeconds
@@ -60,6 +63,8 @@ func runStatus(c client.Caller, stdout io.Writer) error {
 			fmt.Fprintf(stdout, "TTL remaining: %dh %dm\n", hours, minutes)
 		}
 	}
-	fmt.Fprintf(stdout, "Secrets: %d\n", s.SecretCount)
+	if !s.Locked {
+		fmt.Fprintf(stdout, "Secrets: %d\n", s.SecretCount)
+	}
 	return nil
 }
