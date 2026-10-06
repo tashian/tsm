@@ -42,8 +42,48 @@ func TestStatus_TextIncludesVersionAndVaultPath(t *testing.T) {
 	if !strings.Contains(out, "Vault: locked") {
 		t.Errorf("output missing locked state: %q", out)
 	}
-	if !strings.Contains(out, "Secrets: 7") {
-		t.Errorf("output missing secret count: %q", out)
+	// The daemon reports 0 secrets while locked, which reads as an empty
+	// vault. Leave the count out until it is real.
+	if strings.Contains(out, "Secrets:") {
+		t.Errorf("locked status must not show a secret count: %q", out)
+	}
+}
+
+func TestStatus_JSONOmitsSecretCountWhenLocked(t *testing.T) {
+	prevJSON := jsonFlag
+	jsonFlag = true
+	t.Cleanup(func() { jsonFlag = prevJSON })
+
+	mock := &mockCaller{
+		onCall: func(method string, params map[string]any) (any, error) {
+			return map[string]any{"locked": true, "secret_count": 0}, nil
+		},
+	}
+	var buf bytes.Buffer
+	if err := runStatus(mock, &buf); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %s", buf.String())
+	}
+	if _, ok := got["secret_count"]; ok {
+		t.Errorf("locked status must omit secret_count: %s", buf.String())
+	}
+}
+
+func TestStatus_TextShowsSecretCountWhenUnlocked(t *testing.T) {
+	mock := &mockCaller{
+		onCall: func(method string, params map[string]any) (any, error) {
+			return map[string]any{"locked": false, "secret_count": 7, "ttl_remaining_seconds": 60}, nil
+		},
+	}
+	var buf bytes.Buffer
+	if err := runStatus(mock, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "Secrets: 7") {
+		t.Errorf("output missing secret count: %q", buf.String())
 	}
 }
 
