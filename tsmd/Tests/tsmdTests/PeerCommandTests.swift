@@ -43,7 +43,7 @@ final class PeerCommandTests: XCTestCase {
         r.procs[tsmPID] = ProcArgs(argv: ["tsm", "get", "gh-pat"], env: [:])
         r.parents[tsmPID] = 50
         r.procs[50] = ProcArgs(argv: ["/opt/homebrew/bin/bash", "-c",
-            "source /s.sh 2>/dev/null || true && eval 'tsm get gh-pat | curl -sH @- https://api.github.com/user' < /dev/null && pwd -P >| /tmp/c"],
+            "source /Users/x/.claude/shell-snapshots/snapshot-bash-1.sh 2>/dev/null || true && eval 'tsm get gh-pat | curl -sH @- https://api.github.com/user' < /dev/null && pwd -P >| /tmp/c"],
             env: [:])
         XCTAssertEqual(describe(r), PeerInfo(
             command: "tsm get gh-pat | curl -sH @- https://api.github.com/user", secrets: ["gh-pat"]))
