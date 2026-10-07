@@ -62,8 +62,7 @@ actor JSONRPCHandler {
             guard let name = req.stringParam("name") else {
                 throw VaultError.invalidName("Missing 'name' parameter")
             }
-            let clientId = req.stringParam("client_id")
-            let secret = try await vault.get(name: name, sessionID: sessionID, clientId: clientId)
+            let secret = try await vault.get(name: name, sessionID: sessionID)
             return .object(["name": .string(secret.name), "value": .string(secret.value)])
 
         case "vault.add":
@@ -80,25 +79,22 @@ actor JSONRPCHandler {
                 }
                 return []
             }()
-            let clientId = req.stringParam("client_id")
             try await vault.add(name: name, displayName: displayName, value: value,
                                description: description, confirm: confirm, tags: tags,
-                               sessionID: sessionID, clientId: clientId)
+                               sessionID: sessionID)
             return .object(["ok": .bool(true)])
 
         case "vault.remove":
             guard let name = req.stringParam("name") else {
                 throw VaultError.invalidName("Missing 'name' parameter")
             }
-            let clientId = req.stringParam("client_id")
-            try await vault.remove(name: name, sessionID: sessionID, clientId: clientId)
+            try await vault.remove(name: name, sessionID: sessionID)
             return .object(["ok": .bool(true)])
 
         case "vault.edit":
             guard let name = req.stringParam("name") else {
                 throw VaultError.invalidName("Missing 'name' parameter")
             }
-            let clientId = req.stringParam("client_id")
             try await vault.edit(
                 name: name,
                 displayName: req.stringParam("display_name"),
@@ -111,8 +107,7 @@ actor JSONRPCHandler {
                     }
                     return nil
                 }(),
-                sessionID: sessionID,
-                clientId: clientId
+                sessionID: sessionID
             )
             return .object(["ok": .bool(true)])
 
@@ -131,8 +126,7 @@ actor JSONRPCHandler {
             // sessionID intentionally omitted: reset is gated by Touch ID
             // alone and must remain reachable while the vault is locked, so
             // a user with a forgotten passphrase can recover.
-            let clientId = req.stringParam("client_id")
-            try await vault.reset(clientId: clientId)
+            try await vault.reset()
             return .object(["ok": .bool(true)])
 
         case "auth.can_confirm":
