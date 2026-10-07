@@ -49,7 +49,7 @@ func runRemove(cmd *cobra.Command, c client.Caller, name string) error {
 		}
 	}
 
-	if err := c.Call("vault.remove", map[string]any{"name": name, "client_id": clientID()}, nil); err != nil {
+	if err := c.Call("vault.remove", map[string]any{"name": name}, nil); err != nil {
 		return handleError(err)
 	}
 
