@@ -62,8 +62,7 @@ final class IntegrationTests: XCTestCase {
 
         // 4. Get
         let get = await rpc("vault.get", params: [
-            "name": .string("api_key"),
-            "client_id": .string("test/pid:999")
+            "name": .string("api_key")
         ])
         guard case .object(let getObj) = get.result else {
             XCTFail("Expected object"); return

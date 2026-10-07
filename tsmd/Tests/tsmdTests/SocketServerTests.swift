@@ -6,6 +6,7 @@ final class SocketServerTests: XCTestCase {
     var socketPath: String!
     var server: SocketServer!
     var handler: JSONRPCHandler!
+    var auth: MockAuth!
 
     override func setUp() async throws {
         // Use short path — Unix socket paths max out at 104 bytes on macOS
@@ -14,10 +15,11 @@ final class SocketServerTests: XCTestCase {
         try FileManager.default.createDirectory(atPath: tmpDir, withIntermediateDirectories: true)
         socketPath = tmpDir + "/s.sock"
 
+        auth = MockAuth()
         let vault = Vault(
             crypto: MockCrypto(),
             keychain: MockKeychain(),
-            auth: MockAuth(),
+            auth: auth,
             store: MockVaultStore(),
             accessLog: MockAccessLog()
         )
@@ -115,6 +117,20 @@ final class SocketServerTests: XCTestCase {
             XCTFail("Expected object"); return
         }
         XCTAssertEqual(obj["value"], .string("sock_val"))
+    }
+
+    func testConfirmPromptShowsPeerCommand() throws {
+        _ = try sendRequest("""
+        {"jsonrpc":"2.0","method":"vault.add","params":{"name":"k","value":"v","confirm":true},"id":1}
+        """)
+        _ = try sendRequest("""
+        {"jsonrpc":"2.0","method":"vault.get","params":{"name":"k"},"id":2}
+        """)
+        let reason = try XCTUnwrap(auth.reasons.last)
+        XCTAssertTrue(reason.hasPrefix("access 'k':\n\n"), reason)
+        // This test process is the peer, so the dialog shows its own program.
+        let me = (CommandLine.arguments[0] as NSString).lastPathComponent
+        XCTAssertTrue(reason.contains(me), reason)
     }
 
     func testInvalidJsonReturnsParseError() throws {
