@@ -23,37 +23,63 @@ enum PeerCommand {
     static func describe(
         peerPID: pid_t,
         reader: ProcessReader = KernelProcessReader(),
-        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+        isExecutable: (String) -> Bool = isExecutableFile
     ) -> PeerInfo {
-        guard let peer = reader.args(of: peerPID), let argv0 = peer.argv.first else { return .unknown }
-        guard basename(argv0) == "tsm" else {
-            return PeerInfo(command: CommandText.join(peer.argv), secrets: [])
+        guard let peer = reader.args(of: peerPID), !peer.argv.isEmpty else { return .unknown }
+        // Identity comes from the executable path; argv[0] is the peer's to set.
+        let exe = reader.executablePath(of: peerPID)
+        guard let exe, basename(exe) == "tsm" else {
+            return PeerInfo(command: display(peer.argv, exe: exe), secrets: [])
         }
         let args = Array(peer.argv.dropFirst())
         if let run = TsmArgv.run(args) {
             let target = displayTarget(run.target, env: peer.env, cwd: reader.cwd(of: peerPID),
                                        isExecutable: isExecutable)
-            return PeerInfo(command: CommandText.join(target), secrets: run.secrets)
+            return PeerInfo(command: CommandText.join(target), secrets: run.secrets.filter(isValidName))
         }
-        let secrets = TsmArgv.getSecret(args).map { [$0] } ?? []
-        let command = shellCommand(above: peerPID, reader: reader) ?? CommandText.join(["tsm"] + args)
+        let secrets = TsmArgv.getSecret(args).map { [$0] }?.filter(isValidName) ?? []
+        let command = ancestorCommand(above: peerPID, reader: reader) ?? CommandText.join(["tsm"] + args)
         return PeerInfo(command: command, secrets: secrets)
     }
 
-    /// The `-c` command of the nearest shell ancestor, going up through
-    /// node/bun launchers only.
-    private static func shellCommand(above pid: pid_t, reader: ProcessReader) -> String? {
+    /// The command that started `tsm` at `pid`, from its nearest ancestor
+    /// that is not a node/bun launcher:
+    /// - a shell started with -c: its command, harness wrapper removed;
+    /// - an interactive shell: nil (the caller shows tsm's own argv);
+    /// - anything else (python3 -c, bash x.sh, …): that process's argv.
+    private static func ancestorCommand(above pid: pid_t, reader: ProcessReader) -> String? {
         var current = pid
+        var last: (argv: [String], exe: String?)?
         for _ in 0..<maxAncestors {
             guard let parent = reader.parent(of: current), parent > 1,
-                  let args = reader.args(of: parent) else { return nil }
-            if let command = ShellCommand.command(fromShellArgv: args.argv) {
-                return CommandText.clean(command)
+                  let args = reader.args(of: parent), !args.argv.isEmpty else { break }
+            let exe = reader.executablePath(of: parent)
+            let name = exe.map(basename) ?? ""
+            if launchers.contains(name) {
+                last = (args.argv, exe)
+                current = parent
+                continue
             }
-            guard let first = args.argv.first, launchers.contains(basename(first)) else { return nil }
-            current = parent
+            if ShellCommand.shells.contains(name) {
+                if let command = ShellCommand.command(fromShellArgv: args.argv) {
+                    return CommandText.clean(command)
+                }
+                if ShellCommand.isInteractive(args.argv) { return nil }
+            }
+            return display(args.argv, exe: exe)
         }
-        return nil
+        return last.map { display($0.argv, exe: $0.exe) }
+    }
+
+    /// argv as one line, with the kernel's executable path in place of argv[0].
+    private static func display(_ argv: [String], exe: String?) -> String {
+        CommandText.join([exe ?? argv[0]] + argv.dropFirst())
+    }
+
+    /// Secret names the vault would accept. Anything else is text the peer
+    /// chose, and must not reach the dialog's first line.
+    private static func isValidName(_ name: String) -> Bool {
+        (try? NameValidation.validate(name)) != nil
     }
 
     /// The target argv as the dialog shows it: the program as typed when it
@@ -77,6 +103,14 @@ enum PeerCommand {
         guard let path = resolved.map({ ($0 as NSString).standardizingPath }) else { return target }
         if trustedDirs.contains((path as NSString).deletingLastPathComponent) { return target }
         return [path] + target.dropFirst()
+    }
+
+    /// A regular file with an execute bit, as Go's exec.LookPath requires.
+    /// FileManager.isExecutableFile also accepts directories.
+    static func isExecutableFile(_ path: String) -> Bool {
+        var st = stat()
+        guard stat(path, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { return false }
+        return access(path, X_OK) == 0
     }
 
     private static func basename(_ path: String) -> String {

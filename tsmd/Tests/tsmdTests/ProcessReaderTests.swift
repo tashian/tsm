@@ -62,6 +62,17 @@ final class ProcessReaderTests: XCTestCase {
         )
     }
 
+    func testExecutablePathOfOwnProcess() throws {
+        let path = try XCTUnwrap(KernelProcessReader().executablePath(of: getpid()))
+        XCTAssertTrue(path.hasPrefix("/"), path)
+        XCTAssertEqual((path as NSString).lastPathComponent,
+                       (CommandLine.arguments[0] as NSString).lastPathComponent)
+    }
+
+    func testExecutablePathOfMissingProcessIsNil() {
+        XCTAssertNil(KernelProcessReader().executablePath(of: Int32.max))
+    }
+
     func testMissingProcessIsNil() {
         // PID 0 is the kernel; a normal user cannot read its args.
         XCTAssertNil(KernelProcessReader().args(of: 0))

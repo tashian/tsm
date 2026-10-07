@@ -11,6 +11,9 @@ struct ProcArgs: Equatable, Sendable {
 /// process trees.
 protocol ProcessReader: Sendable {
     func args(of pid: pid_t) -> ProcArgs?
+    /// The path of the process's executable file, from the kernel. Unlike
+    /// argv[0], the process cannot change it.
+    func executablePath(of pid: pid_t) -> String?
     func parent(of pid: pid_t) -> pid_t?
     func cwd(of pid: pid_t) -> String?
 }
@@ -28,6 +31,13 @@ struct KernelProcessReader: ProcessReader {
         mib = [CTL_KERN, KERN_PROCARGS2, pid]
         guard sysctl(&mib, u_int(mib.count), &buf, &len, nil, 0) == 0 else { return nil }
         return Self.parse(Array(buf.prefix(len)))
+    }
+
+    func executablePath(of pid: pid_t) -> String? {
+        var buf = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))   // PROC_PIDPATHINFO_MAXSIZE
+        let n = proc_pidpath(pid, &buf, UInt32(buf.count))
+        guard n > 0 else { return nil }
+        return String(decoding: buf.prefix(Int(n)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
     func parent(of pid: pid_t) -> pid_t? { PeerSession.ppid(of: pid) }
