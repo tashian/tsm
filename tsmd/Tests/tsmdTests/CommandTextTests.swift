@@ -29,6 +29,11 @@ final class CommandTextTests: XCTestCase {
         XCTAssertEqual(CommandText.clean("x\u{200B}y"), "xy")
     }
 
+    func testCleanFoldsUnicodeSeparatorsToSpace() {
+        // U+2028/U+2029 are Zl/Zp, not Cc/Cf; the dialog would break lines on them.
+        XCTAssertEqual(CommandText.clean("a\u{2028}b\u{2029}c\u{00A0}d\u{3000}e"), "a b c d e")
+    }
+
     func testJoinCleansBeforeQuoting() {
         XCTAssertEqual(CommandText.join(["echo", "a\nb"]), "echo 'a b'")
     }

@@ -8,9 +8,10 @@ enum CommandText {
     private static let safe = CharacterSet(charactersIn:
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-")
 
-    /// Replaces newline, carriage return, and tab with a space. Removes all
-    /// other control (Cc) and format (Cf) characters; Cf includes the
-    /// bidirectional overrides.
+    /// Replaces newline, carriage return, tab, and every Unicode separator
+    /// (Zs, Zl, Zp; Zl/Zp would break the dialog's lines) with a space.
+    /// Removes all other control (Cc) and format (Cf) characters; Cf
+    /// includes the bidirectional overrides.
     static func clean(_ s: String) -> String {
         var out = String.UnicodeScalarView()
         for u in s.unicodeScalars {
@@ -19,6 +20,7 @@ enum CommandText {
                 continue
             }
             switch u.properties.generalCategory {
+            case .spaceSeparator, .lineSeparator, .paragraphSeparator: out.append(" ")
             case .control, .format: continue
             default: out.append(u)
             }
