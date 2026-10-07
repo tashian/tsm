@@ -6,12 +6,19 @@ enum TsmArgv {
     /// `tsm get` flags that take a value.
     private static let getValueFlags: Set<String> = ["--to-file", "--format"]
 
+    /// pflag's rule: a token is a flag when it starts with "-" and is longer
+    /// than one character. A bare "-" is an argument.
+    private static func isFlag(_ a: String) -> Bool { a.hasPrefix("-") && a.count > 1 }
+
     /// Splits off the subcommand. Global flags before it (`--json`) take no value.
     private static func subcommand(_ args: [String]) -> (name: String, rest: [String])? {
-        guard let i = args.firstIndex(where: { !$0.hasPrefix("-") }) else { return nil }
+        guard let i = args.firstIndex(where: { !isFlag($0) }) else { return nil }
         return (args[i], Array(args[(i + 1)...]))
     }
 
+    /// The target is what cobra passes to `tsm run` as args: every
+    /// positional before "--" (flags may come between them), then
+    /// everything after "--".
     static func run(_ args: [String]) -> (secrets: [String], target: [String])? {
         guard let sub = subcommand(args), sub.name == "run" else { return nil }
         let rest = sub.rest
@@ -21,7 +28,7 @@ enum TsmArgv {
         while i < rest.count {
             let a = rest[i]
             if a == "--" {
-                target = Array(rest[(i + 1)...])
+                target += rest[(i + 1)...]
                 break
             } else if a == "--env" {
                 if i + 1 < rest.count { values.append(rest[i + 1]) }
@@ -29,11 +36,11 @@ enum TsmArgv {
             } else if a.hasPrefix("--env=") {
                 values.append(String(a.dropFirst("--env=".count)))
                 i += 1
-            } else if a.hasPrefix("-") {
+            } else if isFlag(a) {
                 i += 1
             } else {
-                target = Array(rest[i...])
-                break
+                target.append(a)
+                i += 1
             }
         }
         var secrets: [String] = []
@@ -53,7 +60,7 @@ enum TsmArgv {
             let a = rest[i]
             if getValueFlags.contains(a) {
                 i += 2
-            } else if a.hasPrefix("-") {
+            } else if isFlag(a) {
                 i += 1
             } else {
                 return a

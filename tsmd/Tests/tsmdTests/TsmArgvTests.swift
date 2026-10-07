@@ -16,8 +16,27 @@ final class TsmArgvTests: XCTestCase {
     }
 
     func testRunWithoutDoubleDash() throws {
-        let r = try XCTUnwrap(TsmArgv.run(["run", "--env", "A=k", "gh", "--help"]))
-        XCTAssertEqual(r.target, ["gh", "--help"])
+        let r = try XCTUnwrap(TsmArgv.run(["run", "--env", "A=k", "gh", "pr"]))
+        XCTAssertEqual(r.target, ["gh", "pr"])
+    }
+
+    func testRunBareDashIsPositional() throws {
+        // pflag treats "-" as an argument, so cobra runs a program named "-".
+        let r = try XCTUnwrap(TsmArgv.run(["run", "-", "--env", "T=gh-pat", "--", "gh", "pr", "list"]))
+        XCTAssertEqual(r.target, ["-", "gh", "pr", "list"])
+        XCTAssertEqual(r.secrets, ["gh-pat"])
+    }
+
+    func testRunPositionalBeforeEnv() throws {
+        // cobra intersperses flags: positionals before "--" come first.
+        let r = try XCTUnwrap(TsmArgv.run(["run", "gh", "--env", "T=x", "--", "pr", "list"]))
+        XCTAssertEqual(r.target, ["gh", "pr", "list"])
+        XCTAssertEqual(r.secrets, ["x"])
+    }
+
+    func testBareDashIsNotASubcommandFlag() {
+        XCTAssertNil(TsmArgv.run(["-", "run", "--env", "A=k", "--", "x"]))
+        XCTAssertEqual(TsmArgv.getSecret(["get", "-"]), "-")
     }
 
     func testRunAfterGlobalFlag() throws {
