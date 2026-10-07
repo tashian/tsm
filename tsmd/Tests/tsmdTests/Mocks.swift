@@ -93,3 +93,14 @@ final class MockAccessLog: AccessLogProvider, @unchecked Sendable {
         entries.append((method, secret, clientId, result))
     }
 }
+
+/// A fake process tree for PeerCommand tests.
+struct FakeProcessReader: ProcessReader {
+    var procs: [pid_t: ProcArgs] = [:]
+    var parents: [pid_t: pid_t] = [:]
+    var cwds: [pid_t: String] = [:]
+
+    func args(of pid: pid_t) -> ProcArgs? { procs[pid] }
+    func parent(of pid: pid_t) -> pid_t? { parents[pid] }
+    func cwd(of pid: pid_t) -> String? { cwds[pid] }
+}
