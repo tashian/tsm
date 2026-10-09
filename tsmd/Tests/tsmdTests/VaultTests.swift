@@ -239,12 +239,13 @@ final class VaultTests: XCTestCase {
     func testGetLogsAccess() async throws {
         try await vault.initialize(recoveryPassphrase: nil, sessionID: sidA)
         try await vault.add(name: "k", value: "v", description: "d", sessionID: sidA)
-        _ = try await vault.get(name: "k", sessionID: sidA, clientId: "test/pid:1")
+        _ = try await vault.get(name: "k", sessionID: sidA,
+                                peer: PeerInfo(command: "gh pr list", secrets: ["k"]))
         XCTAssertEqual(accessLog.entries.count, 2) // add + get
         let getEntry = accessLog.entries[1]
         XCTAssertEqual(getEntry.method, "vault.get")
         XCTAssertEqual(getEntry.secret, "k")
-        XCTAssertEqual(getEntry.clientId, "test/pid:1")
+        XCTAssertEqual(getEntry.command, "gh pr list")
         XCTAssertEqual(getEntry.result, "ok")
     }
 

@@ -45,7 +45,7 @@ protocol VaultStoreProvider: Sendable {
 }
 
 protocol AccessLogProvider: Sendable {
-    func log(method: String, secret: String?, clientId: String?, result: String) throws
+    func log(method: String, secret: String?, command: String?, result: String) throws
 }
 
 // MARK: - Name validation
@@ -130,7 +130,8 @@ actor Vault {
 
     // MARK: - Unlock / Lock
 
-    func unlock(passphrase: String? = nil, sessionID: pid_t) async throws {
+    func unlock(passphrase: String? = nil, sessionID: pid_t,
+                peer: PeerInfo = .unknown, approvals: ApprovalSet = ApprovalSet()) async throws {
         guard store.exists() else { throw VaultError.notInitialized }
 
         if data == nil {
@@ -145,7 +146,7 @@ actor Vault {
                     passphrase: passphrase, salt: salt, iterations: recovery.iterations
                 )
             } else {
-                try await auth.authenticate(reason: "Unlock tsm vault")
+                try await authenticateUnlock(peer: peer, approvals: approvals)
                 key = try keychain.retrieveMasterKey()
             }
 
@@ -170,7 +171,7 @@ actor Vault {
             if needsAuth {
                 // Passphrase-based recovery only makes sense on cold load. With data
                 // already loaded, require Touch ID regardless of passphrase argument.
-                try await auth.authenticate(reason: "Unlock tsm vault")
+                try await authenticateUnlock(peer: peer, approvals: approvals)
             }
         }
 
@@ -200,6 +201,27 @@ actor Vault {
 
     // MARK: - Authorization helper
 
+    /// Shows the unlock dialog. The secrets it names count as approved on
+    /// this connection, so a confirm-gated one does not prompt a second time.
+    private func authenticateUnlock(peer: PeerInfo, approvals: ApprovalSet) async throws {
+        try await auth.authenticate(
+            reason: DialogReason.make(.unlock, secrets: peer.secrets, command: peer.command))
+        approvals.insert(peer.secrets)
+    }
+
+    /// The confirm-gated secrets to name in one access dialog: each gated
+    /// secret the peer's command reads that this connection has not yet
+    /// approved, plus the requested one.
+    private func confirmGatedNames(for name: String, peer: PeerInfo,
+                                   approvals: ApprovalSet) -> [String] {
+        let gated = peer.secrets.filter { wanted in
+            !approvals.contains(wanted) &&
+                data!.secrets.contains { $0.confirm && $0.name.lowercased() == wanted.lowercased() }
+        }
+        let named = gated.contains { $0.lowercased() == name.lowercased() }
+        return named ? gated : gated + [name]
+    }
+
     private func authorized(_ sessionID: pid_t) throws {
         guard data != nil else { throw VaultError.locked }
         guard let unlocked = unlockedSessions[sessionID] else { throw VaultError.locked }
@@ -219,24 +241,28 @@ actor Vault {
         return data!.secrets.map { SecretMetadata(from: $0) }
     }
 
-    func get(name: String, sessionID: pid_t, clientId: String? = nil) async throws -> Secret {
+    func get(name: String, sessionID: pid_t, peer: PeerInfo = .unknown,
+             approvals: ApprovalSet = ApprovalSet()) async throws -> Secret {
         try authorized(sessionID)
         guard let secret = data!.secrets.first(where: {
             $0.name.lowercased() == name.lowercased()
         }) else {
-            try? accessLog.log(method: "vault.get", secret: name, clientId: clientId, result: "not_found")
+            try? accessLog.log(method: "vault.get", secret: name, command: peer.command, result: "not_found")
             throw VaultError.secretNotFound(name)
         }
-        if secret.confirm {
-            try await auth.authenticate(reason: "Access secret '\(name)'")
+        if secret.confirm && !approvals.contains(name) {
+            let named = confirmGatedNames(for: name, peer: peer, approvals: approvals)
+            try await auth.authenticate(
+                reason: DialogReason.make(.access, secrets: named, command: peer.command))
+            approvals.insert(named)
         }
-        try? accessLog.log(method: "vault.get", secret: name, clientId: clientId, result: "ok")
+        try? accessLog.log(method: "vault.get", secret: name, command: peer.command, result: "ok")
         return secret
     }
 
     func add(name: String, displayName: String = "", value: String, description: String,
              confirm: Bool = false, tags: [String] = [],
-             sessionID: pid_t, clientId: String? = nil) async throws {
+             sessionID: pid_t, peer: PeerInfo = .unknown) async throws {
         try authorized(sessionID)
         try NameValidation.validate(name)
         try DisplayNameValidation.validate(displayName)
@@ -249,10 +275,10 @@ actor Vault {
         )
         data!.secrets.append(secret)
         try persist()
-        try? accessLog.log(method: "vault.add", secret: name, clientId: clientId, result: "ok")
+        try? accessLog.log(method: "vault.add", secret: name, command: peer.command, result: "ok")
     }
 
-    func remove(name: String, sessionID: pid_t, clientId: String? = nil) async throws {
+    func remove(name: String, sessionID: pid_t, peer: PeerInfo = .unknown) async throws {
         try authorized(sessionID)
         guard let index = data!.secrets.firstIndex(where: {
             $0.name.lowercased() == name.lowercased()
@@ -261,12 +287,12 @@ actor Vault {
         }
         data!.secrets.remove(at: index)
         try persist()
-        try? accessLog.log(method: "vault.remove", secret: name, clientId: clientId, result: "ok")
+        try? accessLog.log(method: "vault.remove", secret: name, command: peer.command, result: "ok")
     }
 
     func edit(name: String, displayName: String? = nil, value: String? = nil,
               description: String? = nil, confirm: Bool? = nil, tags: [String]? = nil,
-              sessionID: pid_t, clientId: String? = nil) async throws {
+              sessionID: pid_t, peer: PeerInfo = .unknown) async throws {
         try authorized(sessionID)
         guard let index = data!.secrets.firstIndex(where: {
             $0.name.lowercased() == name.lowercased()
@@ -283,7 +309,7 @@ actor Vault {
         if let t = tags { data!.secrets[index].tags = t }
         data!.secrets[index].updated = Date()
         try persist()
-        try? accessLog.log(method: "vault.edit", secret: name, clientId: clientId, result: "ok")
+        try? accessLog.log(method: "vault.edit", secret: name, command: peer.command, result: "ok")
     }
 
     // MARK: - Config
@@ -342,9 +368,9 @@ actor Vault {
         )
     }
 
-    func reset(clientId: String? = nil) async throws {
+    func reset(peer: PeerInfo = .unknown) async throws {
         try await auth.authenticate(reason: "Reset tsm vault — this destroys all secrets")
-        try? accessLog.log(method: "vault.reset", secret: nil, clientId: clientId, result: "ok")
+        try? accessLog.log(method: "vault.reset", secret: nil, command: peer.command, result: "ok")
         lockAll()
         try? store.delete()
         try? keychain.deleteMasterKey()

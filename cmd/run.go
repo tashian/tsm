@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
 	"strings"
 
 	"tsm/internal/client"
@@ -138,10 +137,7 @@ func runWith(c client.Caller, opts runOptions) error {
 			Name  string `json:"name"`
 			Value string `json:"value"`
 		}
-		params := map[string]any{
-			"name":      name,
-			"client_id": runClientID(path.Base(targetPath)),
-		}
+		params := map[string]any{"name": name}
 		if err := c.Call("vault.get", params, &s); err != nil {
 			return handleError(err)
 		}
@@ -162,10 +158,4 @@ func runWith(c client.Caller, opts runOptions) error {
 func execveRunner(path string, argv, addedEnv []string) error {
 	full := append(os.Environ(), addedEnv...)
 	return unix.Exec(path, argv, full)
-}
-
-// runClientID returns the client_id used in vault.get audit log entries
-// for tsm run invocations.
-func runClientID(targetBasename string) string {
-	return fmt.Sprintf("tsm-run/pid:%d/%s", os.Getpid(), targetBasename)
 }

@@ -265,3 +265,32 @@ func TestRun_DedupesVaultGets(t *testing.T) {
 		t.Fatalf("expected 2 env vars, got %v", rec.Env)
 	}
 }
+
+func TestRun_SendsNoClientID(t *testing.T) {
+	mock := &mockCaller{
+		onCall: func(method string, params map[string]any) (any, error) {
+			switch method {
+			case "vault.list":
+				return []map[string]any{{"name": "gh-pat", "confirm": false}}, nil
+			case "vault.get":
+				return map[string]string{"name": "gh-pat", "value": "v"}, nil
+			}
+			return nil, nil
+		},
+	}
+	var rec recordedExec
+	err := runWith(mock, runOptions{
+		Envs:     []string{"GITHUB_TOKEN=gh-pat"},
+		Argv:     []string{"echo"},
+		Runner:   newFakeRunner(&rec),
+		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range mock.calls {
+		if _, ok := c.Params["client_id"]; ok {
+			t.Fatalf("%s sent client_id", c.Method)
+		}
+	}
+}

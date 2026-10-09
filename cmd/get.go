@@ -66,7 +66,7 @@ func runGetWith(c client.Caller, name string, opts getOptions) error {
 		Name  string `json:"name"`
 		Value string `json:"value"`
 	}
-	if err := c.Call("vault.get", map[string]any{"name": name, "client_id": clientID()}, &secret); err != nil {
+	if err := c.Call("vault.get", map[string]any{"name": name}, &secret); err != nil {
 		return handleError(err)
 	}
 

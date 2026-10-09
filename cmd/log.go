@@ -63,26 +63,32 @@ func runLog(tail int) error {
 	}
 
 	for _, line := range lines {
-		var entry struct {
-			TS       string  `json:"ts"`
-			Method   string  `json:"method"`
-			Secret   *string `json:"secret"`
-			ClientID *string `json:"client_id"`
-			Result   string  `json:"result"`
-		}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			fmt.Println(line)
-			continue
-		}
-		secret := ""
-		if entry.Secret != nil {
-			secret = " " + *entry.Secret
-		}
-		clientID := ""
-		if entry.ClientID != nil {
-			clientID = " (" + *entry.ClientID + ")"
-		}
-		fmt.Printf("%s  %-14s%s  %s%s\n", entry.TS, entry.Method, secret, entry.Result, clientID)
+		fmt.Println(formatLogLine(line))
 	}
 	return nil
+}
+
+// formatLogLine renders one access log line as text. A line that is not
+// valid JSON prints unchanged. Lines written before the command field
+// existed may carry client_id; it is not shown.
+func formatLogLine(line string) string {
+	var entry struct {
+		TS      string  `json:"ts"`
+		Method  string  `json:"method"`
+		Secret  *string `json:"secret"`
+		Command *string `json:"command"`
+		Result  string  `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		return line
+	}
+	secret := ""
+	if entry.Secret != nil {
+		secret = " " + *entry.Secret
+	}
+	command := ""
+	if entry.Command != nil {
+		command = "  " + *entry.Command
+	}
+	return fmt.Sprintf("%s  %-14s%s  %s%s", entry.TS, entry.Method, secret, entry.Result, command)
 }

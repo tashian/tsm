@@ -123,9 +123,8 @@ func runAdd(cmd *cobra.Command, c client.Caller) error {
 	}
 
 	params := map[string]any{
-		"name":      name,
-		"value":     value,
-		"client_id": clientID(),
+		"name":  name,
+		"value": value,
 	}
 	if displayName != "" {
 		params["display_name"] = displayName

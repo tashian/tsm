@@ -4,13 +4,10 @@ struct AccessLogEntry: Codable {
     let ts: String
     let method: String
     let secret: String?
-    let clientId: String?
+    /// The command the daemon read from the peer process. Older lines have
+    /// `client_id` in its place; the decoder ignores that key.
+    let command: String?
     let result: String
-
-    enum CodingKeys: String, CodingKey {
-        case ts, method, secret, result
-        case clientId = "client_id"
-    }
 }
 
 final class FileAccessLog: AccessLogProvider, @unchecked Sendable {
@@ -29,7 +26,7 @@ final class FileAccessLog: AccessLogProvider, @unchecked Sendable {
         self.maxSize = maxSize
     }
 
-    func log(method: String, secret: String?, clientId: String?, result: String) throws {
+    func log(method: String, secret: String?, command: String?, result: String) throws {
         lock.lock()
         defer { lock.unlock() }
 
@@ -37,7 +34,7 @@ final class FileAccessLog: AccessLogProvider, @unchecked Sendable {
             ts: dateFormatter.string(from: Date()),
             method: method,
             secret: secret,
-            clientId: clientId,
+            command: command,
             result: result
         )
         let data = try encoder.encode(entry)

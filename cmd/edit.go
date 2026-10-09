@@ -51,7 +51,7 @@ func runEdit(cmd *cobra.Command, c client.Caller, name string) error {
 		return fmt.Errorf("secret '%s' not found", name)
 	}
 
-	params := map[string]any{"name": name, "client_id": clientID()}
+	params := map[string]any{"name": name}
 
 	noInput, _ := cmd.Flags().GetBool("no-input")
 

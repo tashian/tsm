@@ -197,3 +197,23 @@ func TestMockCaller_RecordsCalls(t *testing.T) {
 
 // Ensure mockCaller satisfies client.Caller at compile time.
 var _ client.Caller = (*mockCaller)(nil)
+
+func TestGet_SendsNoClientID(t *testing.T) {
+	mock := &mockCaller{
+		onCall: func(method string, params map[string]any) (any, error) {
+			if method == "vault.get" {
+				return map[string]string{"name": "gh-pat", "value": "v"}, nil
+			}
+			return nil, nil
+		},
+	}
+	var stdout bytes.Buffer
+	if err := runGetWith(mock, "gh-pat", getOptions{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range mock.calls {
+		if _, ok := c.Params["client_id"]; ok {
+			t.Fatalf("%s sent client_id", c.Method)
+		}
+	}
+}

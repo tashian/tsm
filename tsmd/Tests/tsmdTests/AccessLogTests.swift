@@ -18,7 +18,7 @@ final class AccessLogTests: XCTestCase {
 
     func testLogWritesEntry() throws {
         let log = FileAccessLog(path: logPath)
-        try log.log(method: "vault.get", secret: "my_key", clientId: "test/pid:1", result: "ok")
+        try log.log(method: "vault.get", secret: "my_key", command: "gh pr list", result: "ok")
 
         let content = try String(contentsOf: logPath, encoding: .utf8)
         let lines = content.split(separator: "\n")
@@ -27,16 +27,16 @@ final class AccessLogTests: XCTestCase {
         let entry = try JSONDecoder().decode(AccessLogEntry.self, from: Data(lines[0].utf8))
         XCTAssertEqual(entry.method, "vault.get")
         XCTAssertEqual(entry.secret, "my_key")
-        XCTAssertEqual(entry.clientId, "test/pid:1")
+        XCTAssertEqual(entry.command, "gh pr list")
         XCTAssertEqual(entry.result, "ok")
         XCTAssertFalse(entry.ts.isEmpty)
     }
 
     func testMultipleEntriesAppend() throws {
         let log = FileAccessLog(path: logPath)
-        try log.log(method: "vault.get", secret: "a", clientId: nil, result: "ok")
-        try log.log(method: "vault.get", secret: "b", clientId: nil, result: "ok")
-        try log.log(method: "vault.lock", secret: nil, clientId: nil, result: "ok")
+        try log.log(method: "vault.get", secret: "a", command: nil, result: "ok")
+        try log.log(method: "vault.get", secret: "b", command: nil, result: "ok")
+        try log.log(method: "vault.lock", secret: nil, command: nil, result: "ok")
 
         let content = try String(contentsOf: logPath, encoding: .utf8)
         let lines = content.split(separator: "\n")
@@ -45,7 +45,7 @@ final class AccessLogTests: XCTestCase {
 
     func testNilSecret() throws {
         let log = FileAccessLog(path: logPath)
-        try log.log(method: "vault.lock", secret: nil, clientId: nil, result: "ok")
+        try log.log(method: "vault.lock", secret: nil, command: nil, result: "ok")
 
         let content = try String(contentsOf: logPath, encoding: .utf8)
         let entry = try JSONDecoder().decode(AccessLogEntry.self, from: Data(content.utf8))
@@ -56,7 +56,7 @@ final class AccessLogTests: XCTestCase {
         let log = FileAccessLog(path: logPath, maxSize: 500)
 
         for i in 0..<20 {
-            try log.log(method: "vault.get", secret: "key_\(i)", clientId: nil, result: "ok")
+            try log.log(method: "vault.get", secret: "key_\(i)", command: nil, result: "ok")
         }
 
         let backup = logPath.deletingPathExtension().appendingPathExtension("1.log")
@@ -66,7 +66,21 @@ final class AccessLogTests: XCTestCase {
     func testLogCreatesParentDirectories() throws {
         let nested = tmpDir.appendingPathComponent("a/b/access.log")
         let log = FileAccessLog(path: nested)
-        try log.log(method: "vault.get", secret: "k", clientId: nil, result: "ok")
+        try log.log(method: "vault.get", secret: "k", command: nil, result: "ok")
         XCTAssertTrue(FileManager.default.fileExists(atPath: nested.path))
+    }
+
+    func testDecodesOldLineWithClientID() throws {
+        let old = #"{"ts":"2026-01-01T00:00:00Z","method":"vault.get","secret":"k","client_id":"cli/pid:1","result":"ok"}"#
+        let entry = try JSONDecoder().decode(AccessLogEntry.self, from: Data(old.utf8))
+        XCTAssertNil(entry.command)
+        XCTAssertEqual(entry.secret, "k")
+    }
+
+    func testNoClientIDWritten() throws {
+        let log = FileAccessLog(path: logPath)
+        try log.log(method: "vault.lock", secret: nil, command: nil, result: "ok")
+        let content = try String(contentsOf: logPath, encoding: .utf8)
+        XCTAssertFalse(content.contains("client_id"))
     }
 }

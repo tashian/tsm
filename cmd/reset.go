@@ -75,7 +75,7 @@ func runReset(cmd *cobra.Command, c client.Caller) error {
 		}
 	}
 
-	if err := c.Call("vault.reset", map[string]any{"client_id": clientID()}, nil); err != nil {
+	if err := c.Call("vault.reset", nil, nil); err != nil {
 		return handleError(err)
 	}
 

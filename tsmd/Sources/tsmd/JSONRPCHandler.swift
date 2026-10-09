@@ -9,10 +9,11 @@ actor JSONRPCHandler {
         self.idleTracker = idleTracker
     }
 
-    func handle(_ request: JSONRPCRequest, sessionID: pid_t) async -> JSONRPCResponse {
+    func handle(_ request: JSONRPCRequest, sessionID: pid_t,
+                peer: PeerInfo = .unknown, approvals: ApprovalSet = ApprovalSet()) async -> JSONRPCResponse {
         await idleTracker.bump()
         do {
-            let result = try await dispatch(request, sessionID: sessionID)
+            let result = try await dispatch(request, sessionID: sessionID, peer: peer, approvals: approvals)
             return JSONRPCResponse(result: result, id: request.id)
         } catch let error as VaultError {
             return JSONRPCResponse(error: mapVaultError(error), id: request.id)
@@ -29,7 +30,8 @@ actor JSONRPCHandler {
         }
     }
 
-    private func dispatch(_ req: JSONRPCRequest, sessionID: pid_t) async throws -> JSONValue {
+    private func dispatch(_ req: JSONRPCRequest, sessionID: pid_t,
+                          peer: PeerInfo, approvals: ApprovalSet) async throws -> JSONValue {
         switch req.method {
         case "vault.init":
             let passphrase = req.stringParam("recovery_passphrase")
@@ -38,7 +40,7 @@ actor JSONRPCHandler {
 
         case "vault.unlock":
             let passphrase = req.stringParam("passphrase")
-            try await vault.unlock(passphrase: passphrase, sessionID: sessionID)
+            try await vault.unlock(passphrase: passphrase, sessionID: sessionID, peer: peer, approvals: approvals)
             let status = await vault.status(sessionID: sessionID)
             var resp: [String: JSONValue] = ["ok": .bool(true)]
             if let ttl = status.ttlRemainingSeconds {
@@ -62,8 +64,7 @@ actor JSONRPCHandler {
             guard let name = req.stringParam("name") else {
                 throw VaultError.invalidName("Missing 'name' parameter")
             }
-            let clientId = req.stringParam("client_id")
-            let secret = try await vault.get(name: name, sessionID: sessionID, clientId: clientId)
+            let secret = try await vault.get(name: name, sessionID: sessionID, peer: peer, approvals: approvals)
             return .object(["name": .string(secret.name), "value": .string(secret.value)])
 
         case "vault.add":
@@ -80,25 +81,22 @@ actor JSONRPCHandler {
                 }
                 return []
             }()
-            let clientId = req.stringParam("client_id")
             try await vault.add(name: name, displayName: displayName, value: value,
                                description: description, confirm: confirm, tags: tags,
-                               sessionID: sessionID, clientId: clientId)
+                               sessionID: sessionID, peer: peer)
             return .object(["ok": .bool(true)])
 
         case "vault.remove":
             guard let name = req.stringParam("name") else {
                 throw VaultError.invalidName("Missing 'name' parameter")
             }
-            let clientId = req.stringParam("client_id")
-            try await vault.remove(name: name, sessionID: sessionID, clientId: clientId)
+            try await vault.remove(name: name, sessionID: sessionID, peer: peer)
             return .object(["ok": .bool(true)])
 
         case "vault.edit":
             guard let name = req.stringParam("name") else {
                 throw VaultError.invalidName("Missing 'name' parameter")
             }
-            let clientId = req.stringParam("client_id")
             try await vault.edit(
                 name: name,
                 displayName: req.stringParam("display_name"),
@@ -112,7 +110,7 @@ actor JSONRPCHandler {
                     return nil
                 }(),
                 sessionID: sessionID,
-                clientId: clientId
+                peer: peer
             )
             return .object(["ok": .bool(true)])
 
@@ -131,8 +129,7 @@ actor JSONRPCHandler {
             // sessionID intentionally omitted: reset is gated by Touch ID
             // alone and must remain reachable while the vault is locked, so
             // a user with a forgotten passphrase can recover.
-            let clientId = req.stringParam("client_id")
-            try await vault.reset(clientId: clientId)
+            try await vault.reset(peer: peer)
             return .object(["ok": .bool(true)])
 
         case "auth.can_confirm":

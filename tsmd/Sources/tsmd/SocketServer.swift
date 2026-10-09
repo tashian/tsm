@@ -30,12 +30,12 @@ final class SocketServer: @unchecked Sendable {
     // (LOCAL_PEEREPID) is not relevant here because setsid affects real and
     // effective sessions equally and we want session-id resolution to follow
     // the peer's actual process, not whatever setuid masquerade is in effect.
-    private func peerSessionID(fd: Int32) -> pid_t? {
+    private func peerPID(fd: Int32) -> pid_t? {
         var pid: pid_t = 0
         var len = socklen_t(MemoryLayout<pid_t>.size)
         let rc = getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &len)
         guard rc == 0, pid > 0 else { return nil }
-        return PeerSession.resolveDurableSessionID(peerPID: pid)
+        return pid
     }
 
     func start() throws {
@@ -82,11 +82,14 @@ final class SocketServer: @unchecked Sendable {
             guard let self = self else { return }
             let clientFd = accept(self.serverFd, nil, nil)
             guard clientFd >= 0 else { return }
-            guard let sid = self.peerSessionID(fd: clientFd) else {
+            guard let pid = self.peerPID(fd: clientFd),
+                  let sid = PeerSession.resolveDurableSessionID(peerPID: pid) else {
                 close(clientFd)
                 return
             }
-            Task { await self.handleConnection(clientFd, sessionID: sid) }
+            // Read the peer's command now, while it is waiting on us.
+            let peer = PeerCommand.describe(peerPID: pid)
+            Task { await self.handleConnection(clientFd, sessionID: sid, peer: peer) }
         }
         source.setCancelHandler { [serverFd = self.serverFd] in
             close(serverFd)
@@ -101,8 +104,9 @@ final class SocketServer: @unchecked Sendable {
         unlink(socketPath)
     }
 
-    private func handleConnection(_ fd: Int32, sessionID: pid_t) async {
+    private func handleConnection(_ fd: Int32, sessionID: pid_t, peer: PeerInfo) async {
         defer { close(fd) }
+        let approvals = ApprovalSet()
 
         var buffer = Data()
         let chunkSize = 4096
@@ -137,7 +141,8 @@ final class SocketServer: @unchecked Sendable {
                     continue
                 }
 
-                let response = await handler.handle(request, sessionID: sessionID)
+                let response = await handler.handle(request, sessionID: sessionID,
+                                                    peer: peer, approvals: approvals)
                 writeResponse(response, to: fd)
 
                 if request.method == "daemon.shutdown" {

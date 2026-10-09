@@ -15,11 +15,6 @@ import (
 	"tsm/internal/jsonrpc"
 )
 
-// clientID returns an identifier for audit logging.
-func clientID() string {
-	return fmt.Sprintf("cli/pid:%d", os.Getpid())
-}
-
 // withClient ensures the daemon is running, dials it, runs fn, and closes.
 func withClient(fn func(c client.Caller) error) error {
 	sockPath, err := daemon.EnsureRunning()
